@@ -1,4 +1,6 @@
 const STORAGE_KEY = "stokpilot-demo-v1";
+const SESSION_KEY = "stokpilot-demo-session";
+const DEMO_ACCOUNT = { email: "demo@stokpilot.com", password: "StokPilot2026!" };
 const today = new Date();
 const makeId = () => globalThis.crypto?.randomUUID?.() ?? `id-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
@@ -84,6 +86,44 @@ function persist() {
   } catch {
     showToast("Tarayıcı depolaması kullanılamadı; değişiklikler bu oturumda kalır.");
   }
+}
+
+function initializeAuth() {
+  const authenticated = sessionStorage.getItem(SESSION_KEY) === DEMO_ACCOUNT.email;
+  $("#auth-screen").hidden = authenticated;
+  $("#app-shell").hidden = !authenticated;
+  if (authenticated) {
+    persist();
+    render();
+    return;
+  }
+  $("#auth-email").value = DEMO_ACCOUNT.email;
+  $("#auth-password").value = DEMO_ACCOUNT.password;
+}
+
+function submitLogin(form) {
+  const values = new FormData(form);
+  const email = String(values.get("email") || "").trim().toLocaleLowerCase("tr-TR");
+  const password = String(values.get("password") || "");
+  const error = $("#login-error");
+  if (email !== DEMO_ACCOUNT.email || password !== DEMO_ACCOUNT.password) {
+    error.textContent = "E-posta veya şifre hatalı. Demo bilgilerini kontrol edip yeniden dene.";
+    error.hidden = false;
+    return;
+  }
+  sessionStorage.setItem(SESSION_KEY, DEMO_ACCOUNT.email);
+  error.hidden = true;
+  $("#auth-screen").hidden = true;
+  $("#app-shell").hidden = false;
+  persist();
+  render();
+}
+
+function logout() {
+  sessionStorage.removeItem(SESSION_KEY);
+  $("#modal-root").innerHTML = "";
+  $("#app-shell").hidden = true;
+  $("#auth-screen").hidden = false;
 }
 
 function setView(view) {
@@ -436,6 +476,7 @@ document.addEventListener("click", (event) => {
   const actionElement = event.target.closest("[data-action]");
   if (!actionElement) return;
   const { action } = actionElement.dataset;
+  if (action === "logout") { logout(); return; }
   if (action === "open-product") openModal("product");
   if (action === "open-warehouse") openModal("warehouse");
   if (action === "open-movement") openModal("movement", { productId: actionElement.dataset.productId, warehouseId: actionElement.dataset.warehouseId });
@@ -445,6 +486,11 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("submit", (event) => {
+  if (event.target.matches("#login-form")) {
+    event.preventDefault();
+    submitLogin(event.target);
+    return;
+  }
   if (event.target.matches("#product-form, #warehouse-form, #movement-form")) {
     event.preventDefault();
     submitForm(event.target);
@@ -487,5 +533,4 @@ document.addEventListener("keydown", (event) => {
 });
 window.addEventListener("hashchange", () => { currentView = location.hash.slice(1) || "overview"; render(); });
 
-persist();
-render();
+initializeAuth();

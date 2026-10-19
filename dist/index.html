@@ -7,6 +7,7 @@
     <meta name="description" content="Ürün ve depo stoklarını tek bir ekrandan takip edin." />
     <title>StokPilot — Stok ve Depo Yönetimi</title>
     <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./auth.css" />
   </head>
   <body>
     <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -28,7 +29,39 @@
       <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7L12 3ZM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16Z"/></symbol>
     </svg>
 
-    <div class="app-shell">
+    <section class="auth-screen" id="auth-screen" aria-labelledby="auth-title" hidden>
+      <div class="auth-story">
+        <a class="auth-brand" href="#overview" aria-label="StokPilot ana sayfa">
+          <span class="brand-mark"><svg><use href="#i-box"/></svg></span>
+          <span class="brand-copy"><strong>stokpilot</strong><small>envanter yönetimi</small></span>
+        </a>
+        <div class="auth-story-copy">
+          <span class="auth-kicker"><i></i> STOK VE DEPO YÖNETİMİ</span>
+          <h1>Stokların<br>kontrolün altında.</h1>
+          <p>Ürünlerini, depolarını ve stok hareketlerini tek bir sade ekrandan yönet.</p>
+        </div>
+        <div class="auth-story-foot"><span class="auth-story-mark">S</span><span>İşletmen için<br><strong>daha net bir görünüm.</strong></span></div>
+      </div>
+      <div class="auth-side">
+        <div class="auth-card">
+          <span class="auth-card-icon"><svg><use href="#i-box"/></svg></span>
+          <p class="auth-eyebrow">STOKPILOT DEMO</p>
+          <h2 id="auth-title">Hesabına giriş yap</h2>
+          <p class="auth-intro">Demo hesabıyla ürün ve depoları keşfet.</p>
+          <form id="login-form" class="auth-form">
+            <div class="auth-field"><label for="auth-email">E-posta</label><input id="auth-email" name="email" type="email" autocomplete="username" required></div>
+            <div class="auth-field"><label for="auth-password">Şifre</label><input id="auth-password" name="password" type="password" autocomplete="current-password" required></div>
+            <div class="auth-error" id="login-error" role="alert" hidden></div>
+            <button class="auth-submit" type="submit">Giriş yap <svg><use href="#i-chevron"/></svg></button>
+          </form>
+          <div class="demo-credentials"><div><span class="demo-credentials-icon">✦</span><span><strong>Demo hesabı</strong><small>Giriş bilgileri aşağıda hazır.</small></span></div><dl><dt>E-posta</dt><dd>demo@stokpilot.com</dd><dt>Şifre</dt><dd>StokPilot2026!</dd></dl></div>
+          <p class="auth-note">Demo erişimi bu tarayıcıda çalışır. Değişiklikler bu tarayıcıda saklanır.</p>
+        </div>
+        <span class="auth-side-footer">© 2026 StokPilot · Demo sürümü</span>
+      </div>
+    </section>
+
+    <div class="app-shell" id="app-shell" hidden>
       <aside class="sidebar" id="sidebar">
         <a class="brand" href="#overview" aria-label="StokPilot ana sayfa">
           <span class="brand-mark"><svg><use href="#i-box"/></svg></span>
@@ -45,7 +78,7 @@
         </nav>
         <div class="sidebar-bottom">
           <div class="help-card"><span class="help-icon"><svg><use href="#i-spark"/></svg></span><strong>İşlerin yolunda</strong><p>Stoklarını tek yerden takip et, sürprizleri azalt.</p><button class="text-button" data-action="show-help">Hızlı rehberi gör <svg><use href="#i-chevron"/></svg></button></div>
-          <div class="profile-row"><span class="profile-avatar">AK</span><span><strong>Ayşe Kaya</strong><small>Depo yöneticisi</small></span><button class="more-button" aria-label="Profil seçenekleri">···</button></div>
+          <div class="profile-row"><span class="profile-avatar" id="profile-avatar">DK</span><span><strong id="profile-name">Demo Kullanıcısı</strong><small>Demo hesabı</small></span><button class="signout-button" type="button" data-action="logout">Çıkış</button></div>
         </div>
       </aside>
 
@@ -57,7 +90,7 @@
             <label class="global-search"><svg><use href="#i-search"/></svg><input id="global-search" type="search" placeholder="Ürün, SKU veya depo ara..." autocomplete="off"><kbd>⌘ K</kbd></label>
             <span class="demo-chip"><i></i> Demo verisi</span>
             <button class="icon-button notification-button" aria-label="Bildirimler"><svg><use href="#i-bell"/></svg><i></i></button>
-            <span class="top-avatar">AK</span>
+            <span class="top-avatar" title="Demo Kullanıcısı">DK</span>
           </div>
         </header>
         <section class="page-content" id="page-content" aria-live="polite"></section>
