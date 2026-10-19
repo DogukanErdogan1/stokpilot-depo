@@ -1,0 +1,29 @@
+{
+  "name": "stock-warehouse-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "dev:bun": "bun --watch src/server.ts",
+    "sync:ui": "node scripts/sync-ui.mjs",
+    "build": "tsc -p tsconfig.json",
+    "admin:reset": "node dist/admin-password.js",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.0.0",
+    "dotenv": "^16.5.0",
+    "fastify": "^5.3.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.15.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0"
+  }
+}

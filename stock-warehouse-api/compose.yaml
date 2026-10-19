@@ -1,0 +1,14 @@
+services:
+  stokpilot:
+    build: .
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      DATABASE_PATH: /data/inventory.sqlite
+    ports:
+      - "3000:3000"
+    volumes:
+      - inventory_data:/data
+
+volumes:
+  inventory_data:

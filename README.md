@@ -1,22 +1,50 @@
 # StokPilot
 
-Türkçe stok ve depo yönetim paneli. Bu demo ürün/depo ekleme ve düzenleme, stok hareketi, sayım düzeltme, depo transferi, arşivleme, arama ve CSV dışa aktarma etkileşimlerini örnek verilerle sunar. Stok durumu depo bazında hesaplanır. Kayıtlar bu tarayıcıdaki `localStorage` alanında saklanır; Node.js API'sine henüz bağlı değildir.
+StokPilot, ürünleri, depoları ve stok hareketlerini yönetmek için Türkçe bir envanter panelidir. Web arayüzü ve sunucu API'si bu depoda birlikte bulunur.
 
-## Demo hesabı
+## Özellikler
 
-- E-posta: `demo@stokpilot.com`
-- Şifre: `StokPilot2026!`
+- Ürün ve depo kaydı, düzenleme ve arşivleme
+- Stok giriş/çıkışı, sayım düzeltmesi ve depo transferi
+- Hareket geçmişi, arama ve CSV dışa aktarma
+- Sunucu tarafında parola özeti, oturum ve API yetkilendirmesi
+- SQLite ile kalıcı veri; Docker dağıtımında kalıcı `/data` diski
 
-Bu giriş yalnızca arayüz demosu içindir; kimlik bilgileri tarayıcı tarafında kontrol edilir ve gerçek erişim güvenliği sağlamaz. Oturum sekme kapatılana kadar sürer. Envanter verileri `localStorage` içinde kalır. Gerçek kullanıcı hesabı, rol/izin sistemi ve sunucu tarafında veri saklama için API entegrasyonu gerekir.
+## Yerelde çalıştırma
 
-## Ürün ve depo yönetimi
+Node.js 22 veya üzeri gerekir. `stock-warehouse-api` klasöründe:
 
-- Ürün ve depo bilgileri düzenlenebilir.
-- Stok bakiyesi sıfır olmayan ürün veya depo arşivlenemez. Önce stok hareketleriyle bakiyeyi sıfırlamak gerekir.
-- Arşivlenmiş kayıtlar varsayılan listelerde görünmez; arşiv filtresinden yeniden etkinleştirilebilir.
-- Arşivleme hareket geçmişini silmez. Depo bazlı kritik stok sayımı sıfır bakiyeleri de kapsar.
+```bash
+cp .env.example .env
+```
 
-## Açma
+`.env` içinde `ADMIN_EMAIL` ve en az 12 karakterli `ADMIN_PASSWORD` belirle, sonra:
 
-`dist/index.html` dosyasını bir tarayıcıda açabilir veya klasörü herhangi bir statik web sunucusuyla yayınlayabilirsin. Demo hesabıyla giriş yaptığında örnek depo ve ürünler açılır. Demo verilerini sıfırlamak için tarayıcıda `stokpilot-demo-v1` adlı site verisini temizle.
+```bash
+npm ci
+npm run sync:ui
+npm run dev
+```
 
+Uygulama `http://localhost:3000` adresinde açılır. Windows PowerShell'de `.env.example` dosyasını `.env` olarak kopyalayabilirsin. `dist/index.html` dosyasını doğrudan `file://` üzerinden açmak API bağlantısı sağlamaz.
+
+## Docker dağıtımı
+
+`stock-warehouse-api` klasöründe `.env` oluşturup yönetici bilgilerini ve canlı adresi ayarla, ardından:
+
+```bash
+npm run sync:ui
+docker compose up --build -d
+```
+
+Canlı hosting'de HTTPS, gizli ortam değişkenleri ve yeniden başlatmalarda korunacak kalıcı disk kullan. `DATABASE_PATH` varsayılanı `/data/inventory.sqlite` olur. Ayrıntılar için [`stock-warehouse-api/README.md`](stock-warehouse-api/README.md) dosyasına bak.
+
+## Veri notu
+
+Önceki tarayıcı demosunda oluşan `localStorage` kayıtları sunucu veritabanına otomatik taşınmaz. Bu sürüm yeni SQLite veritabanıyla başlar; eski demo verileri gerekiyorsa ayrı bir içe aktarma adımı gerekir. Depo, ürün ve hareket kayıtları oturum açtıktan sonra API üzerinden saklanır.
+
+## Güvenlik
+
+Gerçek yönetici parolasını `.env` dosyasına veya depoya commit etme. Üretimde `NODE_ENV=production`, doğru `PUBLIC_ORIGIN`, HTTPS ve güçlü yönetici parolası kullan. Bu uygulama tek yönetici hesabıyla başlar; kullanıcı kaydı ve rol tabanlı çok kullanıcılı erişim henüz yoktur.
+
+Statik Sites yayını tek başına Node.js API'sini çalıştıramaz. API için Node.js/Docker runtime ve SQLite verisi için kalıcı disk gerekir.

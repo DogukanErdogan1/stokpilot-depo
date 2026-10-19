@@ -29,7 +29,7 @@
       <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7L12 3ZM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16Z"/></symbol>
     </svg>
 
-    <section class="auth-screen" id="auth-screen" aria-labelledby="auth-title" hidden>
+    <section class="auth-screen" id="auth-screen" aria-labelledby="auth-title">
       <div class="auth-story">
         <a class="auth-brand" href="#overview" aria-label="StokPilot ana sayfa">
           <span class="brand-mark"><svg><use href="#i-box"/></svg></span>
@@ -45,19 +45,18 @@
       <div class="auth-side">
         <div class="auth-card">
           <span class="auth-card-icon"><svg><use href="#i-box"/></svg></span>
-          <p class="auth-eyebrow">STOKPILOT DEMO</p>
+          <p class="auth-eyebrow">STOKPILOT</p>
           <h2 id="auth-title">Hesabına giriş yap</h2>
-          <p class="auth-intro">Demo hesabıyla ürün ve depoları keşfet.</p>
+          <p class="auth-intro">İşletme hesabınla güvenli biçimde giriş yap.</p>
           <form id="login-form" class="auth-form">
             <div class="auth-field"><label for="auth-email">E-posta</label><input id="auth-email" name="email" type="email" autocomplete="username" required></div>
             <div class="auth-field"><label for="auth-password">Şifre</label><input id="auth-password" name="password" type="password" autocomplete="current-password" required></div>
             <div class="auth-error" id="login-error" role="alert" hidden></div>
             <button class="auth-submit" type="submit">Giriş yap <svg><use href="#i-chevron"/></svg></button>
           </form>
-          <div class="demo-credentials"><div><span class="demo-credentials-icon">✦</span><span><strong>Demo hesabı</strong><small>Giriş bilgileri aşağıda hazır.</small></span></div><dl><dt>E-posta</dt><dd>demo@stokpilot.com</dd><dt>Şifre</dt><dd>StokPilot2026!</dd></dl></div>
-          <p class="auth-note">Demo erişimi bu tarayıcıda çalışır. Değişiklikler bu tarayıcıda saklanır.</p>
+          <p class="auth-note">Hesap bilgilerini yöneticinden al. Oturum güvenli çerezle korunur.</p>
         </div>
-        <span class="auth-side-footer">© 2026 StokPilot · Demo sürümü</span>
+        <span class="auth-side-footer">© 2026 StokPilot · Stok yönetimi</span>
       </div>
     </section>
 
@@ -67,7 +66,7 @@
           <span class="brand-mark"><svg><use href="#i-box"/></svg></span>
           <span class="brand-copy"><strong>stokpilot</strong><small>envanter yönetimi</small></span>
         </a>
-        <div class="workspace-switcher"><span class="workspace-avatar">M</span><span><strong>Mavi Atölye</strong><small>İşletme hesabı</small></span><span class="switch-caret">⌄</span></div>
+        <div class="workspace-switcher"><span class="workspace-avatar">S</span><span><strong>StokPilot</strong><small>İşletme hesabı</small></span></div>
         <p class="nav-label">ÇALIŞMA ALANI</p>
         <nav class="main-nav" aria-label="Ana menü">
           <a href="#overview" class="nav-link active" data-view="overview"><svg><use href="#i-grid"/></svg><span>Genel bakış</span></a>
@@ -78,7 +77,7 @@
         </nav>
         <div class="sidebar-bottom">
           <div class="help-card"><span class="help-icon"><svg><use href="#i-spark"/></svg></span><strong>İşlerin yolunda</strong><p>Stoklarını tek yerden takip et, sürprizleri azalt.</p><button class="text-button" data-action="show-help">Hızlı rehberi gör <svg><use href="#i-chevron"/></svg></button></div>
-          <div class="profile-row"><span class="profile-avatar" id="profile-avatar">DK</span><span><strong id="profile-name">Demo Kullanıcısı</strong><small>Demo hesabı</small></span><button class="signout-button" type="button" data-action="logout">Çıkış</button></div>
+          <div class="profile-row"><span class="profile-avatar" id="profile-avatar">SP</span><span><strong id="profile-name">Yönetici</strong><small id="profile-role">İşletme hesabı</small></span><button class="signout-button" type="button" data-action="logout">Çıkış</button></div>
         </div>
       </aside>
 
@@ -88,13 +87,13 @@
           <div class="breadcrumb"><span>İşletme</span><svg><use href="#i-chevron"/></svg><strong id="breadcrumb-current">Genel bakış</strong></div>
           <div class="topbar-actions">
             <label class="global-search"><svg><use href="#i-search"/></svg><input id="global-search" type="search" placeholder="Ürün, SKU veya depo ara..." autocomplete="off"><kbd>⌘ K</kbd></label>
-            <span class="demo-chip"><i></i> Demo verisi</span>
+            <span class="demo-chip"><i></i> Sunucu verisi</span>
             <button class="icon-button notification-button" aria-label="Bildirimler"><svg><use href="#i-bell"/></svg><i></i></button>
-            <span class="top-avatar" title="Demo Kullanıcısı">DK</span>
+            <span class="top-avatar" id="top-avatar" title="StokPilot yöneticisi">SP</span>
           </div>
         </header>
         <section class="page-content" id="page-content" aria-live="polite"></section>
-        <footer class="page-footer"><span>© 2026 StokPilot</span><span>Bu demo verileri yalnızca bu tarayıcıda saklanır.</span></footer>
+        <footer class="page-footer"><span>© 2026 StokPilot</span><span>Kayıtlar sunucu veritabanında saklanır.</span></footer>
       </main>
     </div>
     <div id="modal-root"></div>

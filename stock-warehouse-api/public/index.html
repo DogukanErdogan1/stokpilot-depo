@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f5f6f2" />
+    <meta name="description" content="Ürün ve depo stoklarını tek bir ekrandan takip edin." />
+    <title>StokPilot — Stok ve Depo Yönetimi</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./auth.css" />
+  </head>
+  <body>
+    <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+      <symbol id="i-box" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="M3 8v9l9 5 9-5V8M12 13v9M7.5 5.5l9 5"/></symbol>
+      <symbol id="i-warehouse" viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V10Z"/><path d="M9 21v-7h6v7M7 10h.01M12 10h.01M17 10h.01"/></symbol>
+      <symbol id="i-arrows" viewBox="0 0 24 24"><path d="M7 7h14l-4-4M17 17H3l4 4M21 7l-4 4M3 17l4-4"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+      <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+      <symbol id="i-trend" viewBox="0 0 24 24"><path d="m3 17 6-6 4 4 8-9M15 6h6v6"/></symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 2.5 17.4A1.8 1.8 0 0 0 4 20h16a1.8 1.8 0 0 0 1.5-2.6L13.7 3.9a2 2 0 0 0-3.4 0ZM12 9v4M12 17h.01"/></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+      <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+      <symbol id="i-package-check" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5ZM3 8v9l9 5 9-5V8M12 13v9M8 10l2 2 4-4"/></symbol>
+      <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7L12 3ZM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16Z"/></symbol>
+    </svg>
+
+    <section class="auth-screen" id="auth-screen" aria-labelledby="auth-title">
+      <div class="auth-story">
+        <a class="auth-brand" href="#overview" aria-label="StokPilot ana sayfa">
+          <span class="brand-mark"><svg><use href="#i-box"/></svg></span>
+          <span class="brand-copy"><strong>stokpilot</strong><small>envanter yönetimi</small></span>
+        </a>
+        <div class="auth-story-copy">
+          <span class="auth-kicker"><i></i> STOK VE DEPO YÖNETİMİ</span>
+          <h1>Stokların<br>kontrolün altında.</h1>
+          <p>Ürünlerini, depolarını ve stok hareketlerini tek bir sade ekrandan yönet.</p>
+        </div>
+        <div class="auth-story-foot"><span class="auth-story-mark">S</span><span>İşletmen için<br><strong>daha net bir görünüm.</strong></span></div>
+      </div>
+      <div class="auth-side">
+        <div class="auth-card">
+          <span class="auth-card-icon"><svg><use href="#i-box"/></svg></span>
+          <p class="auth-eyebrow">STOKPILOT</p>
+          <h2 id="auth-title">Hesabına giriş yap</h2>
+          <p class="auth-intro">İşletme hesabınla güvenli biçimde giriş yap.</p>
+          <form id="login-form" class="auth-form">
+            <div class="auth-field"><label for="auth-email">E-posta</label><input id="auth-email" name="email" type="email" autocomplete="username" required></div>
+            <div class="auth-field"><label for="auth-password">Şifre</label><input id="auth-password" name="password" type="password" autocomplete="current-password" required></div>
+            <div class="auth-error" id="login-error" role="alert" hidden></div>
+            <button class="auth-submit" type="submit">Giriş yap <svg><use href="#i-chevron"/></svg></button>
+          </form>
+          <p class="auth-note">Hesap bilgilerini yöneticinden al. Oturum güvenli çerezle korunur.</p>
+        </div>
+        <span class="auth-side-footer">© 2026 StokPilot · Stok yönetimi</span>
+      </div>
+    </section>
+
+    <div class="app-shell" id="app-shell" hidden>
+      <aside class="sidebar" id="sidebar">
+        <a class="brand" href="#overview" aria-label="StokPilot ana sayfa">
+          <span class="brand-mark"><svg><use href="#i-box"/></svg></span>
+          <span class="brand-copy"><strong>stokpilot</strong><small>envanter yönetimi</small></span>
+        </a>
+        <div class="workspace-switcher"><span class="workspace-avatar">S</span><span><strong>StokPilot</strong><small>İşletme hesabı</small></span></div>
+        <p class="nav-label">ÇALIŞMA ALANI</p>
+        <nav class="main-nav" aria-label="Ana menü">
+          <a href="#overview" class="nav-link active" data-view="overview"><svg><use href="#i-grid"/></svg><span>Genel bakış</span></a>
+          <a href="#inventory" class="nav-link" data-view="inventory"><svg><use href="#i-package-check"/></svg><span>Stok durumu</span><span class="nav-count" id="nav-stock-count">0</span></a>
+          <a href="#products" class="nav-link" data-view="products"><svg><use href="#i-box"/></svg><span>Ürünler</span></a>
+          <a href="#warehouses" class="nav-link" data-view="warehouses"><svg><use href="#i-warehouse"/></svg><span>Depolar</span></a>
+          <a href="#movements" class="nav-link" data-view="movements"><svg><use href="#i-arrows"/></svg><span>Hareketler</span></a>
+        </nav>
+        <div class="sidebar-bottom">
+          <div class="help-card"><span class="help-icon"><svg><use href="#i-spark"/></svg></span><strong>İşlerin yolunda</strong><p>Stoklarını tek yerden takip et, sürprizleri azalt.</p><button class="text-button" data-action="show-help">Hızlı rehberi gör <svg><use href="#i-chevron"/></svg></button></div>
+          <div class="profile-row"><span class="profile-avatar" id="profile-avatar">SP</span><span><strong id="profile-name">Yönetici</strong><small id="profile-role">İşletme hesabı</small></span><button class="signout-button" type="button" data-action="logout">Çıkış</button></div>
+        </div>
+      </aside>
+
+      <main class="main-area">
+        <header class="topbar">
+          <button class="icon-button mobile-menu" id="mobile-menu" aria-label="Menüyü aç"><svg><use href="#i-menu"/></svg></button>
+          <div class="breadcrumb"><span>İşletme</span><svg><use href="#i-chevron"/></svg><strong id="breadcrumb-current">Genel bakış</strong></div>
+          <div class="topbar-actions">
+            <label class="global-search"><svg><use href="#i-search"/></svg><input id="global-search" type="search" placeholder="Ürün, SKU veya depo ara..." autocomplete="off"><kbd>⌘ K</kbd></label>
+            <span class="demo-chip"><i></i> Sunucu verisi</span>
+            <button class="icon-button notification-button" aria-label="Bildirimler"><svg><use href="#i-bell"/></svg><i></i></button>
+            <span class="top-avatar" id="top-avatar" title="StokPilot yöneticisi">SP</span>
+          </div>
+        </header>
+        <section class="page-content" id="page-content" aria-live="polite"></section>
+        <footer class="page-footer"><span>© 2026 StokPilot</span><span>Kayıtlar sunucu veritabanında saklanır.</span></footer>
+      </main>
+    </div>
+    <div id="modal-root"></div>
+    <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
+    <script src="./app.js" defer></script>
+  </body>
+</html>

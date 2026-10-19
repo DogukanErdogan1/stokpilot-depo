@@ -1,73 +1,7 @@
-const STORAGE_KEY = "stokpilot-demo-v1";
-const SESSION_KEY = "stokpilot-demo-session";
-const DEMO_ACCOUNT = { email: "demo@stokpilot.com", password: "StokPilot2026!" };
 const today = new Date();
-const makeId = () => globalThis.crypto?.randomUUID?.() ?? `id-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-function daysAgo(days, hour = 10) {
-  const date = new Date();
-  date.setDate(date.getDate() - days);
-  date.setHours(hour, 15, 0, 0);
-  return date.toISOString();
-}
-
-function seedState() {
-  const warehouses = [
-    { id: "wh-main", code: "MRK-01", name: "Merkez Depo", address: "Kadıköy, İstanbul" },
-    { id: "wh-ankara", code: "ANK-02", name: "Ankara Deposu", address: "Çankaya, Ankara" },
-    { id: "wh-izmir", code: "IZM-03", name: "İzmir Deposu", address: "Bornova, İzmir" },
-  ];
-  const rows = [
-    ["MON-2401", "24\" Ofis Monitörü", "Elektronik", "adet", 5, 4890, 8, 5, 5, "◉"],
-    ["KLV-1042", "Mekanik Klavye", "Aksesuar", "adet", 10, 1840, 2, 2, 3, "⌨"],
-    ["SAN-8830", "Ergonomik Çalışma Sandalyesi", "Mobilya", "adet", 6, 7250, 1, 2, 2, "▤"],
-    ["STA-2300", "Alüminyum Laptop Standı", "Aksesuar", "adet", 4, 620, 10, 8, 4, "▱"],
-    ["ETK-5521", "Termal Etiket Rulosu", "Paketleme", "rulo", 20, 185, 5, 4, 7, "▤"],
-    ["HUB-0903", "USB-C Çoklayıcı", "Elektronik", "adet", 5, 1120, 4, 5, 0, "⎓"],
-    ["KBL-1109", "Ethernet Kablosu 3 m", "Kablo", "adet", 15, 95, 12, 18, 12, "⌁"],
-    ["FARE-3208", "Kablosuz Mouse", "Aksesuar", "adet", 10, 540, 2, 3, 3, "◉"],
-    ["KUT-0034", "Kargo Kutusu — Orta", "Paketleme", "adet", 30, 28, 6, 3, 4, "□"],
-    ["BNT-4120", "Güçlü Paketleme Bandı", "Paketleme", "adet", 25, 48, 16, 20, 14, "▥"],
-    ["YAZ-8021", "Termal Barkod Yazıcı", "Elektronik", "adet", 3, 3650, 2, 1, 1, "▣"],
-    ["SSD-1000", "Taşınabilir SSD 1 TB", "Elektronik", "adet", 6, 2780, 0, 0, 0, "▰"],
-  ];
-  const products = rows.map((row, index) => ({
-    id: `product-${index + 1}`,
-    sku: row[0], name: row[1], category: row[2], unit: row[3], minimum: row[4], cost: row[5],
-    stock: { [warehouses[0].id]: row[6], [warehouses[1].id]: row[7], [warehouses[2].id]: row[8] },
-    symbol: row[9],
-  }));
-  const movements = [
-    { id: makeId(), type: "INBOUND", productId: "product-1", warehouseId: "wh-main", delta: 12, note: "Tedarikçi teslimatı", at: daysAgo(0, 9) },
-    { id: makeId(), type: "OUTBOUND", productId: "product-2", warehouseId: "wh-ankara", delta: -3, note: "Ofis kullanımı", at: daysAgo(0, 8) },
-    { id: makeId(), type: "TRANSFER_IN", productId: "product-7", warehouseId: "wh-izmir", delta: 8, note: "Merkez depodan aktarım", at: daysAgo(1, 16) },
-    { id: makeId(), type: "TRANSFER_OUT", productId: "product-7", warehouseId: "wh-main", delta: -8, note: "İzmir deposuna aktarım", at: daysAgo(1, 16) },
-    { id: makeId(), type: "ADJUSTMENT", productId: "product-5", warehouseId: "wh-main", delta: -2, note: "Haftalık sayım", at: daysAgo(2, 14) },
-    { id: makeId(), type: "INBOUND", productId: "product-10", warehouseId: "wh-ankara", delta: 20, note: "Yeni stok girişi", at: daysAgo(3, 11) },
-  ];
-  return { warehouses, products, movements };
-}
-
-function loadState() {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed.products) && Array.isArray(parsed.warehouses) && Array.isArray(parsed.movements)) {
-        return {
-          ...parsed,
-          products: parsed.products.map((product) => ({ ...product, archived: product.archived === true, stock: product.stock || {} })),
-          warehouses: parsed.warehouses.map((warehouse) => ({ ...warehouse, archived: warehouse.archived === true })),
-        };
-      }
-    }
-  } catch (error) {
-    console.warn("Demo kaydı okunamadı, örnek veriler yüklendi.", error);
-  }
-  return seedState();
-}
-
-let state = loadState();
+const API_BASE_URL = "";
+let state = { warehouses: [], products: [], movements: [] };
+let currentUser = null;
 let currentView = location.hash.slice(1) || "overview";
 let currentSearch = "";
 let inventoryWarehouseFilter = "all";
@@ -91,47 +25,106 @@ const warehouseById = (id) => state.warehouses.find((warehouse) => warehouse.id 
 const activeProducts = () => state.products.filter((product) => !product.archived);
 const activeWarehouses = () => state.warehouses.filter((warehouse) => !warehouse.archived);
 
-function persist() {
+async function api(path, options = {}) {
+  let response;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    response = await fetch(`${API_BASE_URL}/api${path}`, {
+      credentials: "same-origin",
+      ...options,
+      headers: { Accept: "application/json", ...(options.body ? { "Content-Type": "application/json" } : {}), ...options.headers },
+    });
   } catch {
-    showToast("Tarayıcı depolaması kullanılamadı; değişiklikler bu oturumda kalır.");
+    throw new Error("Sunucuya ulaşılamadı. API hizmetinin çalıştığını kontrol edin.");
   }
+  if (response.status === 204) return null;
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result?.error?.message || "İstek tamamlanamadı.");
+  return result;
 }
 
-function initializeAuth() {
-  const authenticated = sessionStorage.getItem(SESSION_KEY) === DEMO_ACCOUNT.email;
-  $("#auth-screen").hidden = authenticated;
-  $("#app-shell").hidden = !authenticated;
-  if (authenticated) {
-    persist();
-    render();
-    return;
+async function refreshState() {
+  const [products, warehouses, inventory, movements] = await Promise.all([
+    api("/products"), api("/warehouses"), api("/inventory"), api("/stock-movements?limit=100&offset=0"),
+  ]);
+  const nextWarehouses = warehouses.map((warehouse) => ({ ...warehouse, archived: Boolean(warehouse.archived) }));
+  const nextProducts = products.map((product) => ({
+    ...product,
+    minimum: product.minimumStockQuantity,
+    archived: Boolean(product.archived),
+    stock: Object.fromEntries(nextWarehouses.map((warehouse) => [warehouse.id, 0])),
+  }));
+  const productsById = new Map(nextProducts.map((product) => [product.id, product]));
+  for (const balance of inventory) {
+    const product = productsById.get(balance.productId);
+    if (product) product.stock[balance.warehouseId] = Number(balance.quantity);
   }
-  $("#auth-email").value = DEMO_ACCOUNT.email;
-  $("#auth-password").value = DEMO_ACCOUNT.password;
+  state = {
+    products: nextProducts,
+    warehouses: nextWarehouses,
+    movements: movements.map((movement) => ({
+      ...movement, delta: movement.quantityDelta, at: movement.createdAt,
+    })),
+  };
 }
 
-function submitLogin(form) {
-  const values = new FormData(form);
-  const email = String(values.get("email") || "").trim().toLocaleLowerCase("tr-TR");
-  const password = String(values.get("password") || "");
-  const error = $("#login-error");
-  if (email !== DEMO_ACCOUNT.email || password !== DEMO_ACCOUNT.password) {
-    error.textContent = "E-posta veya şifre hatalı. Demo bilgilerini kontrol edip yeniden dene.";
-    error.hidden = false;
-    return;
-  }
-  sessionStorage.setItem(SESSION_KEY, DEMO_ACCOUNT.email);
-  error.hidden = true;
+function showAuthenticatedApp(user) {
+  currentUser = user;
+  const initials = (user.fullName || user.email).split(/[\s@._-]+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toLocaleUpperCase("tr-TR");
+  $("#profile-name").textContent = user.fullName || user.email;
+  $("#profile-role").textContent = user.email;
+  $("#profile-avatar").textContent = initials || "SP";
+  $("#top-avatar").textContent = initials || "SP";
+  $("#top-avatar").title = user.fullName || user.email;
   $("#auth-screen").hidden = true;
   $("#app-shell").hidden = false;
-  persist();
   render();
 }
 
-function logout() {
-  sessionStorage.removeItem(SESSION_KEY);
+async function initializeAuth() {
+  $("#auth-screen").hidden = false;
+  $("#app-shell").hidden = true;
+  try {
+    const session = await api("/auth/session");
+    if (!session.authenticated) return;
+    await refreshState();
+    showAuthenticatedApp(session.user);
+  } catch (problem) {
+    const error = $("#login-error");
+    error.textContent = problem.message || "Sunucuya ulaşılamadı.";
+    error.hidden = false;
+  }
+}
+
+async function submitLogin(form) {
+  const values = new FormData(form);
+  const email = String(values.get("email") || "").trim();
+  const password = String(values.get("password") || "");
+  const error = $("#login-error");
+  const submit = $("button[type='submit']", form);
+  submit.disabled = true;
+  error.hidden = true;
+  try {
+    const session = await api("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+    await refreshState();
+    showAuthenticatedApp(session.user);
+    form.reset();
+  } catch (problem) {
+    error.textContent = problem.message || "Giriş yapılamadı.";
+    error.hidden = false;
+  } finally {
+    submit.disabled = false;
+  }
+}
+
+async function logout() {
+  try {
+    await api("/auth/logout", { method: "POST" });
+  } catch {
+    showToast("Sunucuya ulaşılamadığı için çıkış tamamlanamadı. Bağlantı gelince yeniden dene.");
+    return;
+  }
+  currentUser = null;
+  state = { warehouses: [], products: [], movements: [] };
   $("#modal-root").innerHTML = "";
   $("#app-shell").hidden = true;
   $("#auth-screen").hidden = false;
@@ -393,98 +386,70 @@ function showToast(message) {
   setTimeout(() => toast.remove(), 3200);
 }
 
-function addMovement({ productId, warehouseId, type, delta, note }) {
-  const product = productById(productId);
-  if (!product) throw new Error("Ürün bulunamadı.");
-  if (!warehouseById(warehouseId)) throw new Error("Depo bulunamadı.");
-  if (product.archived || warehouseById(warehouseId).archived) throw new Error("Arşivlenmiş ürün veya depoda işlem yapılamaz.");
-  const next = Number(product.stock[warehouseId] || 0) + delta;
-  if (next < 0) throw new Error("Bu depoda bu işlem için yeterli stok yok.");
-  product.stock[warehouseId] = next;
-  state.movements.unshift({ id: makeId(), productId, warehouseId, type, delta, note, at: new Date().toISOString() });
-}
-
-function saveProduct(form) {
+async function saveProduct(form) {
   const data = new FormData(form);
-  const sku = String(data.get("sku")).trim();
   const productId = form.dataset.productId;
-  const existing = productId ? productById(productId) : null;
-  if (state.products.some((product) => product.id !== productId && product.sku.toLocaleLowerCase("tr-TR") === sku.toLocaleLowerCase("tr-TR"))) throw new Error("Bu SKU kodu zaten kullanılıyor.");
   const fields = {
-    sku, name: String(data.get("name")).trim(), category: String(data.get("category") || "Genel").trim(),
-    unit: String(data.get("unit")), minimum: Math.max(0, Number(data.get("minimum") || 0)), cost: Math.max(0, Number(data.get("cost") || 0)),
+    sku: String(data.get("sku")).trim(),
+    name: String(data.get("name")).trim(),
+    category: String(data.get("category") || "Genel").trim(),
+    unit: String(data.get("unit")),
+    minimumStockQuantity: Math.max(0, Number(data.get("minimum") || 0)),
+    cost: Math.max(0, Number(data.get("cost") || 0)),
   };
-  if (existing) {
-    Object.assign(existing, fields);
-    persist();
-    $("#modal-root").innerHTML = "";
-    render();
-    showToast("Ürün bilgileri güncellendi.");
-    return;
-  }
-  const product = {
-    id: makeId(), ...fields, archived: false,
-    stock: Object.fromEntries(state.warehouses.map((warehouse) => [warehouse.id, 0])), symbol: "□",
-  };
-  state.products.unshift(product);
-  persist();
+  await api(productId ? `/products/${encodeURIComponent(productId)}` : "/products", {
+    method: productId ? "PATCH" : "POST", body: JSON.stringify(fields),
+  });
+  await refreshState();
   $("#modal-root").innerHTML = "";
   render();
-  showToast("Ürün envantere eklendi.");
+  showToast(productId ? "Ürün bilgileri güncellendi." : "Ürün envantere eklendi.");
 }
 
-function saveWarehouse(form) {
+async function saveWarehouse(form) {
   const data = new FormData(form);
   const code = String(data.get("code")).trim().toLocaleUpperCase("tr-TR");
   const warehouseId = form.dataset.warehouseId;
-  const existing = warehouseId ? warehouseById(warehouseId) : null;
-  if (state.warehouses.some((warehouse) => warehouse.id !== warehouseId && warehouse.code.toLocaleLowerCase("tr-TR") === code.toLocaleLowerCase("tr-TR"))) throw new Error("Bu depo kodu zaten kullanılıyor.");
   const fields = { code, name: String(data.get("name")).trim(), address: String(data.get("address") || "").trim() };
-  if (existing) {
-    Object.assign(existing, fields);
-    persist();
-    $("#modal-root").innerHTML = "";
-    render();
-    showToast("Depo bilgileri güncellendi.");
-    return;
-  }
-  const warehouse = { id: makeId(), ...fields, archived: false };
-  state.warehouses.push(warehouse);
-  state.products.forEach((product) => { product.stock[warehouse.id] = 0; });
-  persist();
+  await api(warehouseId ? `/warehouses/${encodeURIComponent(warehouseId)}` : "/warehouses", {
+    method: warehouseId ? "PATCH" : "POST", body: JSON.stringify(fields),
+  });
+  await refreshState();
   $("#modal-root").innerHTML = "";
   render();
-  showToast("Yeni depo oluşturuldu.");
+  showToast(warehouseId ? "Depo bilgileri güncellendi." : "Yeni depo oluşturuldu.");
 }
 
-function toggleProductArchive(productId) {
+async function toggleProductArchive(productId) {
   const product = productById(productId);
   if (!product) return;
   if (!product.archived && sumStock(product) > 0) {
     showToast("Arşivlemeden önce ürünün tüm depolardaki stokunu sıfırla.");
     return;
   }
-  product.archived = !product.archived;
-  persist();
+  const archived = !product.archived;
+  await api(`/products/${encodeURIComponent(productId)}`, { method: "PATCH", body: JSON.stringify({ archived }) });
+  await refreshState();
   render();
-  showToast(product.archived ? "Ürün arşivlendi." : "Ürün yeniden etkinleştirildi.");
+  showToast(archived ? "Ürün arşivlendi." : "Ürün yeniden etkinleştirildi.");
 }
 
-function toggleWarehouseArchive(warehouseId) {
+async function toggleWarehouseArchive(warehouseId) {
   const warehouse = warehouseById(warehouseId);
   if (!warehouse) return;
   if (!warehouse.archived && state.products.some((product) => Number(product.stock?.[warehouseId] || 0) > 0)) {
     showToast("Arşivlemeden önce bu depodaki stokları başka depoya aktar veya çıkış yap.");
     return;
   }
-  warehouse.archived = !warehouse.archived;
-  if (inventoryWarehouseFilter === warehouseId && warehouse.archived) inventoryWarehouseFilter = "all";
-  persist();
+  const archived = !warehouse.archived;
+  await api(`/warehouses/${encodeURIComponent(warehouseId)}`, { method: "PATCH", body: JSON.stringify({ archived }) });
+  await refreshState();
+  if (inventoryWarehouseFilter === warehouseId && archived) inventoryWarehouseFilter = "all";
   render();
-  showToast(warehouse.archived ? "Depo arşivlendi." : "Depo yeniden etkinleştirildi.");
+  showToast(archived ? "Depo arşivlendi." : "Depo yeniden etkinleştirildi.");
 }
 
-function saveMovement(form) {
+async function saveMovement(form) {
   const data = new FormData(form);
   const type = String(data.get("type"));
   const productId = String(data.get("productId"));
@@ -498,32 +463,43 @@ function saveMovement(form) {
     if (sourceWarehouseId === targetWarehouseId) throw new Error("Kaynak ve hedef depo farklı olmalı.");
     const sourceQuantity = Number(product?.stock?.[sourceWarehouseId] || 0);
     if (sourceQuantity < quantity) throw new Error("Kaynak depoda yeterli stok yok.");
-    addMovement({ productId, warehouseId: sourceWarehouseId, type: "TRANSFER_OUT", delta: -quantity, note: note || "Depolar arası transfer" });
-    addMovement({ productId, warehouseId: targetWarehouseId, type: "TRANSFER_IN", delta: quantity, note: note || "Depolar arası transfer" });
+    await api("/transfers", { method: "POST", body: JSON.stringify({
+      productId, sourceWarehouseId, targetWarehouseId, quantity, note: note || "Depolar arası transfer",
+    }) });
   } else if (type === "ADJUSTMENT") {
     const warehouseId = String(data.get("warehouseId"));
     const delta = quantity - Number(product?.stock?.[warehouseId] || 0);
     if (delta === 0) throw new Error("Sayım miktarı mevcut stokla aynı.");
-    addMovement({ productId, warehouseId, type: "ADJUSTMENT", delta, note: note || "Fiziki sayım düzeltmesi" });
+    await api("/inventory/adjustments", { method: "POST", body: JSON.stringify({
+      productId, warehouseId, countedQuantity: quantity, note: note || "Fiziki sayım düzeltmesi",
+    }) });
   } else {
-    addMovement({ productId, warehouseId: String(data.get("warehouseId")), type, delta: type === "INBOUND" ? quantity : -quantity, note });
+    await api("/stock-movements", { method: "POST", body: JSON.stringify({
+      productId, warehouseId: String(data.get("warehouseId")), type, quantity, note,
+    }) });
   }
-  persist();
+  await refreshState();
   $("#modal-root").innerHTML = "";
   render();
   showToast("Stok hareketi kaydedildi.");
 }
 
-function submitForm(form) {
+async function submitForm(form) {
   const error = $("#form-error", form);
   if (!form.reportValidity()) return;
+  const submit = $("button[type='submit']", form);
+  submit.disabled = true;
+  error.textContent = "";
+  error.classList.remove("visible");
   try {
-    if (form.id === "product-form") saveProduct(form);
-    if (form.id === "warehouse-form") saveWarehouse(form);
-    if (form.id === "movement-form") saveMovement(form);
+    if (form.id === "product-form") await saveProduct(form);
+    if (form.id === "warehouse-form") await saveWarehouse(form);
+    if (form.id === "movement-form") await saveMovement(form);
   } catch (problem) {
     error.textContent = problem.message || "İşlem kaydedilemedi.";
     error.classList.add("visible");
+  } finally {
+    submit.disabled = false;
   }
 }
 
@@ -546,7 +522,7 @@ function exportCsv() {
 }
 
 function showHelp() {
-  alert("Hızlı başlangıç\n\n1. Ürünler bölümünden ürün ekle.\n2. Depolar bölümünde lokasyonlarını tanımla.\n3. Stok işlemi ile giriş, çıkış, sayım düzeltmesi veya transfer kaydet.\n4. Stok durumu ve hareketler ekranından kayıtlarını takip et.\n\nBu demo verileri tarayıcında saklanır.");
+  alert("Hızlı başlangıç\n\n1. Ürünler bölümünden ürün ekle.\n2. Depolar bölümünde lokasyonlarını tanımla.\n3. Stok işlemi ile giriş, çıkış, sayım düzeltmesi veya transfer kaydet.\n4. Stok durumu ve hareketler ekranından kayıtlarını takip et.\n\nKayıtlar sunucu veritabanında saklanır.");
 }
 
 document.addEventListener("click", (event) => {
@@ -564,13 +540,17 @@ document.addEventListener("click", (event) => {
   if (action === "edit-product") openProductEditor(actionElement.dataset.productId);
   if (action === "toggle-product-archive") {
     const product = productById(actionElement.dataset.productId);
-    if (product?.archived || confirm("Bu ürünü arşivlemek istiyor musun? Arşivlenmiş ürünler yeni stok işlemlerinde görünmez.")) toggleProductArchive(actionElement.dataset.productId);
+    if (product?.archived || confirm("Bu ürünü arşivlemek istiyor musun? Arşivlenmiş ürünler yeni stok işlemlerinde görünmez.")) {
+      void toggleProductArchive(actionElement.dataset.productId).catch((problem) => showToast(problem.message || "Ürün güncellenemedi."));
+    }
   }
   if (action === "open-warehouse") openModal("warehouse");
   if (action === "edit-warehouse") openWarehouseEditor(actionElement.dataset.warehouseId);
   if (action === "toggle-warehouse-archive") {
     const warehouse = warehouseById(actionElement.dataset.warehouseId);
-    if (warehouse?.archived || confirm("Bu depoyu arşivlemek istiyor musun? Depo hareket geçmişi korunur.")) toggleWarehouseArchive(actionElement.dataset.warehouseId);
+    if (warehouse?.archived || confirm("Bu depoyu arşivlemek istiyor musun? Depo hareket geçmişi korunur.")) {
+      void toggleWarehouseArchive(actionElement.dataset.warehouseId).catch((problem) => showToast(problem.message || "Depo güncellenemedi."));
+    }
   }
   if (action === "toggle-archived-products") { showArchivedProducts = !showArchivedProducts; currentSearch = ""; render(); }
   if (action === "toggle-archived-warehouses") { showArchivedWarehouses = !showArchivedWarehouses; render(); }
@@ -583,12 +563,12 @@ document.addEventListener("click", (event) => {
 document.addEventListener("submit", (event) => {
   if (event.target.matches("#login-form")) {
     event.preventDefault();
-    submitLogin(event.target);
+    void submitLogin(event.target);
     return;
   }
   if (event.target.matches("#product-form, #warehouse-form, #movement-form")) {
     event.preventDefault();
-    submitForm(event.target);
+    void submitForm(event.target);
   }
 });
 
@@ -628,5 +608,4 @@ document.addEventListener("keydown", (event) => {
 });
 window.addEventListener("hashchange", () => { currentView = location.hash.slice(1) || "overview"; render(); });
 
-initializeAuth();
-
+void initializeAuth();
