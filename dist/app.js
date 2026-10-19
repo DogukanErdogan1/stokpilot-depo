@@ -53,7 +53,13 @@ function loadState() {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed.products) && Array.isArray(parsed.warehouses) && Array.isArray(parsed.movements)) return parsed;
+      if (Array.isArray(parsed.products) && Array.isArray(parsed.warehouses) && Array.isArray(parsed.movements)) {
+        return {
+          ...parsed,
+          products: parsed.products.map((product) => ({ ...product, archived: product.archived === true, stock: product.stock || {} })),
+          warehouses: parsed.warehouses.map((warehouse) => ({ ...warehouse, archived: warehouse.archived === true })),
+        };
+      }
     }
   } catch (error) {
     console.warn("Demo kaydı okunamadı, örnek veriler yüklendi.", error);
@@ -66,19 +72,24 @@ let currentView = location.hash.slice(1) || "overview";
 let currentSearch = "";
 let inventoryWarehouseFilter = "all";
 let movementTypeFilter = "all";
+let showArchivedProducts = false;
+let showArchivedWarehouses = false;
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const esc = (value = "") => String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 const icon = (name) => `<svg aria-hidden="true"><use href="#i-${name}"></use></svg>`;
 const sumStock = (product) => Object.values(product.stock || {}).reduce((total, amount) => total + Number(amount || 0), 0);
+const statusFor = (quantity, minimum) => Number(quantity) === 0 ? "empty" : Number(quantity) <= Number(minimum) ? "low" : "ok";
 const money = (amount) => new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY", maximumFractionDigits: 0 }).format(amount);
 const number = (amount) => new Intl.NumberFormat("tr-TR").format(amount);
 const dateShort = (value) => new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "short" }).format(new Date(value));
 const dateTime = (value) => new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
-const statusOf = (product) => sumStock(product) === 0 ? "empty" : sumStock(product) <= Number(product.minimum) ? "low" : "ok";
+const statusOf = (product) => statusFor(sumStock(product), product.minimum);
 const productById = (id) => state.products.find((product) => product.id === id);
 const warehouseById = (id) => state.warehouses.find((warehouse) => warehouse.id === id);
+const activeProducts = () => state.products.filter((product) => !product.archived);
+const activeWarehouses = () => state.warehouses.filter((warehouse) => !warehouse.archived);
 
 function persist() {
   try {
@@ -159,8 +170,8 @@ function productVisual(product) {
   return `<span class="product-avatar" aria-hidden="true">${esc(product.symbol || "□")}</span>`;
 }
 
-function statusPill(product) {
-  const status = statusOf(product);
+function statusPill(product, quantity = sumStock(product)) {
+  const status = statusFor(quantity, product.minimum);
   const title = status === "empty" ? "Tükendi" : status === "low" ? "Kritik seviye" : "Stokta";
   return `<span class="status-pill ${status}">${title}</span>`;
 }
@@ -177,28 +188,28 @@ function recentMovementTable(movements) {
 }
 
 function renderOverview() {
-  const totalUnits = state.products.reduce((total, product) => total + sumStock(product), 0);
-  const stockValue = state.products.reduce((total, product) => total + sumStock(product) * Number(product.cost || 0), 0);
-  const lowProducts = state.products.filter((product) => statusOf(product) !== "ok");
+  const totalUnits = activeProducts().reduce((total, product) => total + sumStock(product), 0);
+  const stockValue = activeProducts().reduce((total, product) => total + sumStock(product) * Number(product.cost || 0), 0);
+  const lowProducts = activeProducts().filter((product) => statusOf(product) !== "ok");
   const critical = lowProducts.slice(0, 4);
-  const warehouseTotals = state.warehouses.map((warehouse) => ({
+  const warehouseTotals = activeWarehouses().map((warehouse) => ({
     ...warehouse,
-    count: state.products.reduce((total, product) => total + Number(product.stock?.[warehouse.id] || 0), 0),
-    products: state.products.filter((product) => Number(product.stock?.[warehouse.id] || 0) > 0).length,
+    count: activeProducts().reduce((total, product) => total + Number(product.stock?.[warehouse.id] || 0), 0),
+    products: activeProducts().filter((product) => Number(product.stock?.[warehouse.id] || 0) > 0).length,
   }));
   const maxWarehouseStock = Math.max(1, ...warehouseTotals.map((warehouse) => warehouse.count));
   const day = new Intl.DateTimeFormat("tr-TR", { weekday: "long", day: "numeric", month: "long" }).format(today);
   const actions = `<button class="button" data-action="export-csv">${icon("download")} Dışa aktar</button><button class="button button-primary" data-action="open-movement">${icon("plus")} Stok işlemi</button>`;
   return `${pageHeading(day, "Genel bakış", "Depolarındaki ürün ve stok durumunu tek ekranda gör.", actions)}
     <div class="metrics-grid">
-      ${metricCard("Ürün çeşidi", number(state.products.length), "SKU", `<em>envanterinde</em> kayıtlı`, "box")}
-      ${metricCard("Toplam stok", number(totalUnits), "adet", `${state.warehouses.length} farklı depoda`, "arrows", "blue")}
+      ${metricCard("Ürün çeşidi", number(activeProducts().length), "SKU", `<em>envanterinde</em> kayıtlı`, "box")}
+      ${metricCard("Toplam stok", number(totalUnits), "adet", `${activeWarehouses().length} farklı depoda`, "arrows", "blue")}
       ${metricCard("Stok değeri", money(stockValue), "tahmini", "Birim maliyet üzerinden hesaplandı", "trend", "amber")}
-      ${metricCard("Kritik ürün", number(lowProducts.length), "ürün", `<em>${state.products.filter((product) => sumStock(product) === 0).length} ürün</em> tamamen tükendi`, "alert", "red")}
+      ${metricCard("Kritik ürün", number(lowProducts.length), "ürün", `<em>${activeProducts().filter((product) => sumStock(product) === 0).length} ürün</em> tamamen tükendi`, "alert", "red")}
     </div>
     <div class="dashboard-grid">
       <section class="panel"><header class="panel-header"><div><h2 class="panel-title">Depolara göre stok</h2><p class="panel-subtitle">Tüm depolardaki toplam ürün adedi</p></div><button class="subtle-link" data-view="warehouses">Depoları gör →</button></header>
-        <div class="stock-distribution"><div class="warehouse-bars">${warehouseTotals.map((warehouse) => `<div class="warehouse-bar-row"><div class="warehouse-label"><strong>${esc(warehouse.name)}</strong><small>${warehouse.products} ürün çeşidi</small></div><div class="bar-track"><div class="bar-fill" style="width:${Math.max(3, warehouse.count / maxWarehouseStock * 100)}%"></div></div><div class="bar-amount">${number(warehouse.count)}</div></div>`).join("")}</div><div class="panel-foot"><i class="status-dot"></i> Stok bakiyeleri güncel <span style="margin-left:auto">${state.warehouses.length} aktif depo</span></div></div>
+        <div class="stock-distribution"><div class="warehouse-bars">${warehouseTotals.map((warehouse) => `<div class="warehouse-bar-row"><div class="warehouse-label"><strong>${esc(warehouse.name)}</strong><small>${warehouse.products} ürün çeşidi</small></div><div class="bar-track"><div class="bar-fill" style="width:${Math.max(3, warehouse.count / maxWarehouseStock * 100)}%"></div></div><div class="bar-amount">${number(warehouse.count)}</div></div>`).join("")}</div><div class="panel-foot"><i class="status-dot"></i> Stok bakiyeleri güncel <span style="margin-left:auto">${activeWarehouses().length} aktif depo</span></div></div>
       </section>
       <section class="panel"><header class="panel-header"><div><h2 class="panel-title">Dikkat gerektirenler</h2><p class="panel-subtitle">Minimum stok seviyesinin altındakiler</p></div><button class="subtle-link" data-view="inventory">Tümünü gör →</button></header>
         <div class="low-list">${critical.length ? critical.map((product) => `<div class="low-item">${productVisual(product)}<div class="low-item-main"><strong>${esc(product.name)}</strong><small>${esc(product.sku)} · Min. ${number(product.minimum)} ${esc(product.unit)}</small></div><span class="stock-alert ${statusOf(product) === "empty" ? "empty" : ""}">${sumStock(product) === 0 ? "Tükendi" : `${number(sumStock(product))} kaldı`}</span></div>`).join("") : `<div class="empty-state"><strong>Harika, kritik stok yok.</strong>Stok seviyelerin kontrol altında.</div>`}</div>
@@ -209,33 +220,36 @@ function renderOverview() {
 
 function filteredProducts() {
   const query = currentSearch.toLocaleLowerCase("tr-TR");
-  return state.products.filter((product) => !query || [product.name, product.sku, product.category].some((value) => String(value || "").toLocaleLowerCase("tr-TR").includes(query)));
+  return state.products.filter((product) => (showArchivedProducts ? product.archived : !product.archived)
+    && (!query || [product.name, product.sku, product.category].some((value) => String(value || "").toLocaleLowerCase("tr-TR").includes(query))));
 }
 
 function productRows(products) {
-  if (!products.length) return `<tr><td colspan="7"><div class="empty-state"><strong>Ürün bulunamadı</strong>Arama kelimeni değiştirebilir veya yeni ürün ekleyebilirsin.</div></td></tr>`;
+  if (!products.length) return `<tr><td colspan="6"><div class="empty-state"><strong>Ürün bulunamadı</strong>Arama kelimeni değiştirebilir veya yeni ürün ekleyebilirsin.</div></td></tr>`;
   return products.map((product) => {
     const stock = sumStock(product);
     const status = statusOf(product);
     const meterWidth = product.minimum > 0 ? Math.min(100, stock / (product.minimum * 2) * 100) : stock > 0 ? 100 : 0;
-    return `<tr><td><div class="product-cell">${productVisual(product)}<span class="product-name"><strong>${esc(product.name)}</strong><small>${esc(product.category || "Genel")}</small></span></div></td><td><span class="sku-code">${esc(product.sku)}</span></td><td><div class="stock-cell"><div class="stock-cell-top"><b>${number(stock)} ${esc(product.unit)}</b><span>Min. ${number(product.minimum)}</span></div><div class="stock-meter"><span class="${status}" style="width:${meterWidth}%"></span></div></div></td><td>${money(stock * Number(product.cost || 0))}</td><td>${statusPill(product)}</td><td><button class="button button-small" data-action="open-movement" data-product-id="${esc(product.id)}">Stok işlemi</button></td></tr>`;
+    return `<tr class="${product.archived ? "archived-row" : ""}"><td><div class="product-cell">${productVisual(product)}<span class="product-name"><strong>${esc(product.name)}${product.archived ? " · Arşivde" : ""}</strong><small>${esc(product.category || "Genel")}</small></span></div></td><td><span class="sku-code">${esc(product.sku)}</span></td><td><div class="stock-cell"><div class="stock-cell-top"><b>${number(stock)} ${esc(product.unit)}</b><span>Min. ${number(product.minimum)}</span></div><div class="stock-meter"><span class="${status}" style="width:${meterWidth}%"></span></div></div></td><td>${money(stock * Number(product.cost || 0))}</td><td>${statusPill(product)}</td><td><div class="row-actions"><button class="button button-small" data-action="edit-product" data-product-id="${esc(product.id)}">Düzenle</button><button class="button button-small" data-action="toggle-product-archive" data-product-id="${esc(product.id)}">${product.archived ? "Geri al" : "Arşivle"}</button>${product.archived ? "" : `<button class="button button-small" data-action="open-movement" data-product-id="${esc(product.id)}">Stok işlemi</button>`}</div></td></tr>`;
   }).join("");
 }
 
 function renderProducts() {
   const actions = `<button class="button" data-action="export-csv">${icon("download")} CSV indir</button><button class="button button-primary" data-action="open-product">${icon("plus")} Yeni ürün</button>`;
+  const archivedCount = state.products.filter((product) => product.archived).length;
+  const visibleCount = filteredProducts().length;
   return `${pageHeading("ENVANTER", "Ürünler", "Ürün kataloğunu ve toplam stok seviyelerini yönet.", actions)}
-    <div class="page-toolbar"><div class="page-toolbar-left"><input class="table-search" id="product-search" type="search" placeholder="Ürün adı, SKU veya kategori ara..." value="${esc(currentSearch)}"><span class="table-count">${state.products.length} ürün</span></div><div class="page-toolbar-right"><button class="button button-small" data-action="open-warehouse">${icon("plus")} Depo ekle</button></div></div>
+    <div class="page-toolbar"><div class="page-toolbar-left"><input class="table-search" id="product-search" type="search" placeholder="Ürün adı, SKU veya kategori ara..." value="${esc(currentSearch)}"><span class="table-count">${visibleCount} ${showArchivedProducts ? "arşivlenmiş" : "aktif"} ürün</span></div><div class="page-toolbar-right"><button class="button button-small" data-action="toggle-archived-products">${showArchivedProducts ? "Aktif ürünler" : `Arşivdekiler (${archivedCount})`}</button><button class="button button-small" data-action="open-warehouse">${icon("plus")} Depo ekle</button></div></div>
     <section class="panel table-panel"><div class="table-scroll"><table class="data-table"><thead><tr><th>ÜRÜN</th><th>SKU</th><th>TOPLAM STOK</th><th>STOK DEĞERİ</th><th>DURUM</th><th></th></tr></thead><tbody>${productRows(filteredProducts())}</tbody></table></div></section>`;
 }
 
 function inventoryRows() {
   const query = currentSearch.toLocaleLowerCase("tr-TR");
   const rows = [];
-  for (const product of state.products) {
+  for (const product of activeProducts()) {
     const matches = !query || [product.name, product.sku, product.category].some((value) => String(value || "").toLocaleLowerCase("tr-TR").includes(query));
     if (!matches) continue;
-    for (const warehouse of state.warehouses) {
+    for (const warehouse of activeWarehouses()) {
       if (inventoryWarehouseFilter !== "all" && inventoryWarehouseFilter !== warehouse.id) continue;
       rows.push({ product, warehouse, quantity: Number(product.stock?.[warehouse.id] || 0) });
     }
@@ -246,26 +260,26 @@ function inventoryRows() {
 function renderInventory() {
   const rows = inventoryRows();
   const body = rows.length ? rows.map(({ product, warehouse, quantity }) => {
-    const total = sumStock(product);
-    const productStatus = statusOf(product);
-    return `<tr><td><div class="product-cell">${productVisual(product)}<span class="product-name"><strong>${esc(product.name)}</strong><small>${esc(product.sku)}</small></span></div></td><td><span class="warehouse-mini"><span class="warehouse-dot">${esc(warehouse.code.slice(0, 2))}</span>${esc(warehouse.name)}</span></td><td><b class="qty-cell ${quantity === 0 ? "empty" : quantity <= product.minimum ? "low" : ""}">${number(quantity)} ${esc(product.unit)}</b></td><td>${number(product.minimum)} ${esc(product.unit)}</td><td>${statusPill({ ...product, stock: { total: total } })}</td><td><button class="button button-small" data-action="open-movement" data-product-id="${esc(product.id)}" data-warehouse-id="${esc(warehouse.id)}">İşlem ekle</button></td></tr>`;
+    return `<tr><td><div class="product-cell">${productVisual(product)}<span class="product-name"><strong>${esc(product.name)}</strong><small>${esc(product.sku)}</small></span></div></td><td><span class="warehouse-mini"><span class="warehouse-dot">${esc(warehouse.code.slice(0, 2))}</span>${esc(warehouse.name)}</span></td><td><b class="qty-cell ${quantity === 0 ? "empty" : quantity <= product.minimum ? "low" : ""}">${number(quantity)} ${esc(product.unit)}</b></td><td>${number(product.minimum)} ${esc(product.unit)}</td><td>${statusPill(product, quantity)}</td><td><button class="button button-small" data-action="open-movement" data-product-id="${esc(product.id)}" data-warehouse-id="${esc(warehouse.id)}">İşlem ekle</button></td></tr>`;
   }).join("") : `<tr><td colspan="6"><div class="empty-state"><strong>Sonuç bulunamadı</strong>Seçili filtrelere uygun stok kaydı yok.</div></td></tr>`;
-  const warehouseOptions = state.warehouses.map((warehouse) => `<option value="${esc(warehouse.id)}" ${inventoryWarehouseFilter === warehouse.id ? "selected" : ""}>${esc(warehouse.name)}</option>`).join("");
+  const warehouseOptions = activeWarehouses().map((warehouse) => `<option value="${esc(warehouse.id)}" ${inventoryWarehouseFilter === warehouse.id ? "selected" : ""}>${esc(warehouse.name)}</option>`).join("");
   const actions = `<button class="button" data-action="export-csv">${icon("download")} CSV indir</button><button class="button button-primary" data-action="open-movement">${icon("plus")} Stok işlemi</button>`;
   return `${pageHeading("ENVANTER", "Stok durumu", "Ürün bakiyelerini depo bazında incele ve güncelle.", actions)}
     <div class="page-toolbar"><div class="page-toolbar-left"><input class="table-search" id="inventory-search" type="search" placeholder="Ürün veya SKU ara..." value="${esc(currentSearch)}"><select class="filter-control" id="warehouse-filter"><option value="all">Tüm depolar</option>${warehouseOptions}</select></div><div class="page-toolbar-right"><span class="table-count">${rows.length} stok satırı</span></div></div>
-    <section class="panel table-panel"><div class="table-scroll"><table class="data-table"><thead><tr><th>ÜRÜN</th><th>DEPO</th><th>MEVCUT</th><th>MİNİMUM</th><th>GENEL DURUM</th><th></th></tr></thead><tbody>${body}</tbody></table></div></section>`;
+    <section class="panel table-panel"><div class="table-scroll"><table class="data-table"><thead><tr><th>ÜRÜN</th><th>DEPO</th><th>MEVCUT</th><th>MİNİMUM</th><th>DEPO DURUMU</th><th></th></tr></thead><tbody>${body}</tbody></table></div></section>`;
 }
 
 function renderWarehouses() {
-  const cards = state.warehouses.map((warehouse) => {
+  const visibleWarehouses = state.warehouses.filter((warehouse) => (showArchivedWarehouses ? warehouse.archived : !warehouse.archived));
+  const cards = visibleWarehouses.map((warehouse) => {
     const total = state.products.reduce((sum, product) => sum + Number(product.stock?.[warehouse.id] || 0), 0);
     const productCount = state.products.filter((product) => Number(product.stock?.[warehouse.id] || 0) > 0).length;
-    const lowCount = state.products.filter((product) => Number(product.stock?.[warehouse.id] || 0) > 0 && Number(product.stock?.[warehouse.id]) <= Number(product.minimum)).length;
-    return `<article class="warehouse-card"><div class="warehouse-card-top"><span class="warehouse-card-icon">${icon("warehouse")}</span><span class="warehouse-code">${esc(warehouse.code)}</span></div><h3>${esc(warehouse.name)}</h3><p>${esc(warehouse.address || "Adres eklenmemiş")}</p><div class="warehouse-card-stats"><span><strong>${number(total)}</strong>Toplam adet</span><span><strong>${number(productCount)}</strong>Ürün çeşidi</span><span><strong>${number(lowCount)}</strong>Kritik stok</span></div><div class="panel-foot"><i class="status-dot"></i> Aktif depo</div></article>`;
+    const lowCount = activeProducts().filter((product) => Number(product.stock?.[warehouse.id] || 0) <= Number(product.minimum)).length;
+    return `<article class="warehouse-card ${warehouse.archived ? "archived-row" : ""}"><div class="warehouse-card-top"><span class="warehouse-card-icon">${icon("warehouse")}</span><span class="warehouse-code">${esc(warehouse.code)}</span></div><h3>${esc(warehouse.name)}${warehouse.archived ? " · Arşivde" : ""}</h3><p>${esc(warehouse.address || "Adres eklenmemiş")}</p><div class="warehouse-card-stats"><span><strong>${number(total)}</strong>Toplam adet</span><span><strong>${number(productCount)}</strong>Ürün çeşidi</span><span><strong>${number(lowCount)}</strong>Kritik stok</span></div><div class="panel-foot"><i class="status-dot ${warehouse.archived ? "warn" : ""}"></i> ${warehouse.archived ? "Arşivlenmiş depo" : "Aktif depo"}<span class="warehouse-card-actions"><button class="button button-small" data-action="edit-warehouse" data-warehouse-id="${esc(warehouse.id)}">Düzenle</button><button class="button button-small" data-action="toggle-warehouse-archive" data-warehouse-id="${esc(warehouse.id)}">${warehouse.archived ? "Geri al" : "Arşivle"}</button></span></div></article>`;
   }).join("");
-  const actions = `<button class="button button-primary" data-action="open-warehouse">${icon("plus")} Yeni depo</button>`;
-  return `${pageHeading("LOKASYONLAR", "Depolar", "Depo konumlarını ve her birindeki ürün dağılımını görüntüle.", actions)}<div class="warehouse-card-grid">${cards || `<section class="panel empty-state"><strong>Henüz depo eklenmedi</strong>İlk depoyu ekleyerek envanterini düzenlemeye başlayabilirsin.</section>`}</div>`;
+  const archivedCount = state.warehouses.filter((warehouse) => warehouse.archived).length;
+  const actions = `<button class="button button-small" data-action="toggle-archived-warehouses">${showArchivedWarehouses ? "Aktif depolar" : `Arşivdekiler (${archivedCount})`}</button><button class="button button-primary" data-action="open-warehouse">${icon("plus")} Yeni depo</button>`;
+  return `${pageHeading("LOKASYONLAR", "Depolar", "Depo konumlarını ve her birindeki ürün dağılımını görüntüle.", actions)}<div class="warehouse-card-grid">${cards || `<section class="panel empty-state"><strong>${showArchivedWarehouses ? "Arşivlenmiş depo yok" : "Henüz depo eklenmedi"}</strong>${showArchivedWarehouses ? "Arşivlenmiş depolar burada görünür." : "İlk depoyu ekleyerek envanterini düzenlemeye başlayabilirsin."}</section>`}</div>`;
 }
 
 function renderMovements() {
@@ -301,15 +315,15 @@ function render() {
   $$(".nav-link").forEach((link) => link.classList.toggle("active", link.dataset.view === currentView));
   $("#breadcrumb-current").textContent = views[currentView][0];
   $("#page-content").innerHTML = views[currentView][1]();
-  $("#nav-stock-count").textContent = state.products.filter((product) => statusOf(product) !== "ok").length;
+  $("#nav-stock-count").textContent = activeProducts().filter((product) => statusOf(product) !== "ok").length;
 }
 
 function productOptions(selected = "") {
-  return state.products.map((product) => `<option value="${esc(product.id)}" ${selected === product.id ? "selected" : ""}>${esc(product.name)} · ${esc(product.sku)}</option>`).join("");
+  return activeProducts().map((product) => `<option value="${esc(product.id)}" ${selected === product.id ? "selected" : ""}>${esc(product.name)} · ${esc(product.sku)}</option>`).join("");
 }
 
 function warehouseOptions(selected = "") {
-  return state.warehouses.map((warehouse) => `<option value="${esc(warehouse.id)}" ${selected === warehouse.id ? "selected" : ""}>${esc(warehouse.name)}</option>`).join("");
+  return activeWarehouses().map((warehouse) => `<option value="${esc(warehouse.id)}" ${selected === warehouse.id ? "selected" : ""}>${esc(warehouse.name)}</option>`).join("");
 }
 
 function openModal(kind, presets = {}) {
@@ -330,6 +344,21 @@ function openModal(kind, presets = {}) {
   }
   const firstInput = $("input:not([type=hidden]), select", root);
   firstInput?.focus();
+}
+
+function openProductEditor(productId) {
+  const product = productById(productId);
+  if (!product) return;
+  const units = ["adet", "kutu", "paket", "rulo", "kg", "litre"];
+  $("#modal-root").innerHTML = `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header class="modal-head"><div><h2 id="modal-title">Ürünü düzenle</h2><p>Ürün bilgilerini güncelle.</p></div><button class="modal-close" data-action="close-modal" aria-label="Kapat">${icon("close")}</button></header><form class="modal-form" id="product-form" data-product-id="${esc(product.id)}"><div class="form-grid"><div class="form-field"><label for="product-sku">SKU / Ürün kodu</label><input id="product-sku" name="sku" maxlength="40" value="${esc(product.sku)}" required></div><div class="form-field"><label for="product-name">Ürün adı</label><input id="product-name" name="name" maxlength="100" value="${esc(product.name)}" required></div><div class="form-field"><label for="product-category">Kategori</label><input id="product-category" name="category" maxlength="50" value="${esc(product.category || "Genel")}"></div><div class="form-field"><label for="product-unit">Birim</label><select id="product-unit" name="unit">${units.map((unit) => `<option ${unit === product.unit ? "selected" : ""}>${unit}</option>`).join("")}</select></div><div class="form-field"><label for="product-minimum">Minimum stok</label><input id="product-minimum" name="minimum" type="number" min="0" step="1" value="${esc(product.minimum)}" required></div><div class="form-field"><label for="product-cost">Birim maliyet (₺)</label><input id="product-cost" name="cost" type="number" min="0" step="1" value="${esc(product.cost || 0)}"></div></div><div class="form-error" id="form-error"></div><div class="modal-actions"><button type="button" class="button" data-action="close-modal">Vazgeç</button><button class="button button-primary" type="submit">Değişiklikleri kaydet</button></div></form></section></div>`;
+  $("#product-sku").focus();
+}
+
+function openWarehouseEditor(warehouseId) {
+  const warehouse = warehouseById(warehouseId);
+  if (!warehouse) return;
+  $("#modal-root").innerHTML = `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header class="modal-head"><div><h2 id="modal-title">Depoyu düzenle</h2><p>Depo konum bilgilerini güncelle.</p></div><button class="modal-close" data-action="close-modal" aria-label="Kapat">${icon("close")}</button></header><form class="modal-form" id="warehouse-form" data-warehouse-id="${esc(warehouse.id)}"><div class="form-grid"><div class="form-field"><label for="warehouse-code">Depo kodu</label><input id="warehouse-code" name="code" maxlength="20" value="${esc(warehouse.code)}" required></div><div class="form-field"><label for="warehouse-name">Depo adı</label><input id="warehouse-name" name="name" maxlength="80" value="${esc(warehouse.name)}" required></div><div class="form-field full"><label for="warehouse-address">Adres</label><input id="warehouse-address" name="address" maxlength="150" value="${esc(warehouse.address || "")}"></div></div><div class="form-error" id="form-error"></div><div class="modal-actions"><button type="button" class="button" data-action="close-modal">Vazgeç</button><button class="button button-primary" type="submit">Değişiklikleri kaydet</button></div></form></section></div>`;
+  $("#warehouse-code").focus();
 }
 
 function updateMovementFields() {
@@ -368,6 +397,7 @@ function addMovement({ productId, warehouseId, type, delta, note }) {
   const product = productById(productId);
   if (!product) throw new Error("Ürün bulunamadı.");
   if (!warehouseById(warehouseId)) throw new Error("Depo bulunamadı.");
+  if (product.archived || warehouseById(warehouseId).archived) throw new Error("Arşivlenmiş ürün veya depoda işlem yapılamaz.");
   const next = Number(product.stock[warehouseId] || 0) + delta;
   if (next < 0) throw new Error("Bu depoda bu işlem için yeterli stok yok.");
   product.stock[warehouseId] = next;
@@ -377,10 +407,23 @@ function addMovement({ productId, warehouseId, type, delta, note }) {
 function saveProduct(form) {
   const data = new FormData(form);
   const sku = String(data.get("sku")).trim();
-  if (state.products.some((product) => product.sku.toLocaleLowerCase("tr-TR") === sku.toLocaleLowerCase("tr-TR"))) throw new Error("Bu SKU kodu zaten kullanılıyor.");
-  const product = {
-    id: makeId(), sku, name: String(data.get("name")).trim(), category: String(data.get("category") || "Genel").trim(),
+  const productId = form.dataset.productId;
+  const existing = productId ? productById(productId) : null;
+  if (state.products.some((product) => product.id !== productId && product.sku.toLocaleLowerCase("tr-TR") === sku.toLocaleLowerCase("tr-TR"))) throw new Error("Bu SKU kodu zaten kullanılıyor.");
+  const fields = {
+    sku, name: String(data.get("name")).trim(), category: String(data.get("category") || "Genel").trim(),
     unit: String(data.get("unit")), minimum: Math.max(0, Number(data.get("minimum") || 0)), cost: Math.max(0, Number(data.get("cost") || 0)),
+  };
+  if (existing) {
+    Object.assign(existing, fields);
+    persist();
+    $("#modal-root").innerHTML = "";
+    render();
+    showToast("Ürün bilgileri güncellendi.");
+    return;
+  }
+  const product = {
+    id: makeId(), ...fields, archived: false,
     stock: Object.fromEntries(state.warehouses.map((warehouse) => [warehouse.id, 0])), symbol: "□",
   };
   state.products.unshift(product);
@@ -393,14 +436,52 @@ function saveProduct(form) {
 function saveWarehouse(form) {
   const data = new FormData(form);
   const code = String(data.get("code")).trim().toLocaleUpperCase("tr-TR");
-  if (state.warehouses.some((warehouse) => warehouse.code.toLocaleLowerCase("tr-TR") === code.toLocaleLowerCase("tr-TR"))) throw new Error("Bu depo kodu zaten kullanılıyor.");
-  const warehouse = { id: makeId(), code, name: String(data.get("name")).trim(), address: String(data.get("address") || "").trim() };
+  const warehouseId = form.dataset.warehouseId;
+  const existing = warehouseId ? warehouseById(warehouseId) : null;
+  if (state.warehouses.some((warehouse) => warehouse.id !== warehouseId && warehouse.code.toLocaleLowerCase("tr-TR") === code.toLocaleLowerCase("tr-TR"))) throw new Error("Bu depo kodu zaten kullanılıyor.");
+  const fields = { code, name: String(data.get("name")).trim(), address: String(data.get("address") || "").trim() };
+  if (existing) {
+    Object.assign(existing, fields);
+    persist();
+    $("#modal-root").innerHTML = "";
+    render();
+    showToast("Depo bilgileri güncellendi.");
+    return;
+  }
+  const warehouse = { id: makeId(), ...fields, archived: false };
   state.warehouses.push(warehouse);
   state.products.forEach((product) => { product.stock[warehouse.id] = 0; });
   persist();
   $("#modal-root").innerHTML = "";
   render();
   showToast("Yeni depo oluşturuldu.");
+}
+
+function toggleProductArchive(productId) {
+  const product = productById(productId);
+  if (!product) return;
+  if (!product.archived && sumStock(product) > 0) {
+    showToast("Arşivlemeden önce ürünün tüm depolardaki stokunu sıfırla.");
+    return;
+  }
+  product.archived = !product.archived;
+  persist();
+  render();
+  showToast(product.archived ? "Ürün arşivlendi." : "Ürün yeniden etkinleştirildi.");
+}
+
+function toggleWarehouseArchive(warehouseId) {
+  const warehouse = warehouseById(warehouseId);
+  if (!warehouse) return;
+  if (!warehouse.archived && state.products.some((product) => Number(product.stock?.[warehouseId] || 0) > 0)) {
+    showToast("Arşivlemeden önce bu depodaki stokları başka depoya aktar veya çıkış yap.");
+    return;
+  }
+  warehouse.archived = !warehouse.archived;
+  if (inventoryWarehouseFilter === warehouseId && warehouse.archived) inventoryWarehouseFilter = "all";
+  persist();
+  render();
+  showToast(warehouse.archived ? "Depo arşivlendi." : "Depo yeniden etkinleştirildi.");
 }
 
 function saveMovement(form) {
@@ -448,9 +529,11 @@ function submitForm(form) {
 
 function exportCsv() {
   const rows = [["Ürün", "SKU", "Kategori", "Depo", "Miktar", "Birim", "Minimum", "Durum"]];
-  for (const product of state.products) {
-    for (const warehouse of state.warehouses) {
-      rows.push([product.name, product.sku, product.category, warehouse.name, product.stock?.[warehouse.id] || 0, product.unit, product.minimum, statusOf(product) === "ok" ? "Stokta" : statusOf(product) === "empty" ? "Tükendi" : "Kritik"]);
+  for (const product of activeProducts()) {
+    for (const warehouse of activeWarehouses()) {
+      const quantity = Number(product.stock?.[warehouse.id] || 0);
+      const status = statusFor(quantity, product.minimum);
+      rows.push([product.name, product.sku, product.category, warehouse.name, quantity, product.unit, product.minimum, status === "ok" ? "Stokta" : status === "empty" ? "Tükendi" : "Kritik"]);
     }
   }
   const csv = "\uFEFF" + rows.map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(";")).join("\r\n");
@@ -478,7 +561,19 @@ document.addEventListener("click", (event) => {
   const { action } = actionElement.dataset;
   if (action === "logout") { logout(); return; }
   if (action === "open-product") openModal("product");
+  if (action === "edit-product") openProductEditor(actionElement.dataset.productId);
+  if (action === "toggle-product-archive") {
+    const product = productById(actionElement.dataset.productId);
+    if (product?.archived || confirm("Bu ürünü arşivlemek istiyor musun? Arşivlenmiş ürünler yeni stok işlemlerinde görünmez.")) toggleProductArchive(actionElement.dataset.productId);
+  }
   if (action === "open-warehouse") openModal("warehouse");
+  if (action === "edit-warehouse") openWarehouseEditor(actionElement.dataset.warehouseId);
+  if (action === "toggle-warehouse-archive") {
+    const warehouse = warehouseById(actionElement.dataset.warehouseId);
+    if (warehouse?.archived || confirm("Bu depoyu arşivlemek istiyor musun? Depo hareket geçmişi korunur.")) toggleWarehouseArchive(actionElement.dataset.warehouseId);
+  }
+  if (action === "toggle-archived-products") { showArchivedProducts = !showArchivedProducts; currentSearch = ""; render(); }
+  if (action === "toggle-archived-warehouses") { showArchivedWarehouses = !showArchivedWarehouses; render(); }
   if (action === "open-movement") openModal("movement", { productId: actionElement.dataset.productId, warehouseId: actionElement.dataset.warehouseId });
   if (action === "export-csv") exportCsv();
   if (action === "show-help") showHelp();
@@ -534,3 +629,4 @@ document.addEventListener("keydown", (event) => {
 window.addEventListener("hashchange", () => { currentView = location.hash.slice(1) || "overview"; render(); });
 
 initializeAuth();
+
