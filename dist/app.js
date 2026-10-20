@@ -24,6 +24,76 @@ const productById = (id) => state.products.find((product) => product.id === id);
 const warehouseById = (id) => state.warehouses.find((warehouse) => warehouse.id === id);
 const activeProducts = () => state.products.filter((product) => !product.archived);
 const activeWarehouses = () => state.warehouses.filter((warehouse) => !warehouse.archived);
+const getUserInitials = (user) => (user.fullName || user.email || "StokPilot").split(/[\s@._-]+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toLocaleUpperCase("tr-TR") || "SP";
+
+function stockNotifications() {
+  return activeProducts()
+    .map((product) => ({ product, quantity: sumStock(product) }))
+    .filter(({ product, quantity }) => quantity <= Number(product.minimum))
+    .sort((a, b) => Number(a.quantity > 0) - Number(b.quantity > 0) || a.quantity - b.quantity || a.product.name.localeCompare(b.product.name, "tr"));
+}
+
+function closeTopbarPopovers() {
+  for (const [buttonId, panelId] of [["notification-button", "notification-popover"], ["top-avatar", "profile-popover"]]) {
+    const button = $(`#${buttonId}`);
+    const panel = $(`#${panelId}`);
+    button.setAttribute("aria-expanded", "false");
+    panel.hidden = true;
+  }
+}
+
+function renderNotificationPopover() {
+  const alerts = stockNotifications();
+  const visibleAlerts = alerts.slice(0, 6);
+  $("#notification-popover").innerHTML = `
+    <header class="popover-heading"><div><strong>Stok bildirimleri</strong><p>Minimum seviyeye ulaşan ürünler</p></div><span class="notification-total">${number(alerts.length)}</span></header>
+    ${visibleAlerts.length ? `<div class="notification-list">${visibleAlerts.map(({ product, quantity }) => {
+      const empty = quantity === 0;
+      const message = empty ? "Stok tükendi" : `${number(quantity)} ${esc(product.unit)} kaldı · minimum ${number(product.minimum)}`;
+      return `<button class="notification-item" type="button" data-view="inventory" aria-label="${esc(product.name)} stok uyarısı, ${esc(message)}">
+        <span class="notification-symbol ${empty ? "empty" : "low"}" aria-hidden="true">${empty ? "!" : "↓"}</span>
+        <span class="notification-item-copy"><strong>${esc(product.name)}</strong><small>${esc(product.sku)} · ${message} ${empty ? "" : esc(product.unit)}</small></span>
+        <span class="notification-severity ${empty ? "empty" : "low"}">${empty ? "Tükendi" : "Kritik"}</span>
+      </button>`;
+    }).join("")}</div>${alerts.length > visibleAlerts.length ? `<p class="notification-overflow">+ ${number(alerts.length - visibleAlerts.length)} başka stok uyarısı</p>` : ""}` : `<div class="notification-empty"><span aria-hidden="true">✓</span><strong>Şimdilik her şey yolunda</strong><p>Minimum seviyenin altındaki ürün bulunmuyor.</p></div>`}
+    <footer class="popover-footer"><button type="button" data-view="inventory">Stok durumunu görüntüle <span aria-hidden="true">→</span></button></footer>`;
+}
+
+function renderProfilePopover() {
+  const user = currentUser || {};
+  const name = user.fullName || user.email || "StokPilot kullanıcısı";
+  const initials = getUserInitials(user);
+  $("#profile-popover").innerHTML = `
+    <header class="popover-heading"><div><strong>Hesabım</strong><p>Oturum açan kullanıcı</p></div></header>
+    <div class="profile-popover-user"><span class="profile-popover-avatar" aria-hidden="true">${esc(initials)}</span><span><strong>${esc(name)}</strong><small>Yönetici hesabı</small></span></div>
+    <div class="profile-popover-email"><span>E-posta</span><strong>${esc(user.email || "—")}</strong></div>
+    <p class="profile-popover-note">Daire içindeki harfler hesabı temsil eder; bu sürümde fotoğraf yükleme yoktur.</p>
+    <button class="profile-logout" type="button" data-action="logout"><span aria-hidden="true">↪</span> Oturumu kapat</button>`;
+}
+
+function toggleTopbarPopover(name) {
+  const buttonId = name === "notifications" ? "notification-button" : "top-avatar";
+  const panelId = name === "notifications" ? "notification-popover" : "profile-popover";
+  const button = $(`#${buttonId}`);
+  const panel = $(`#${panelId}`);
+  const shouldOpen = panel.hidden;
+  closeTopbarPopovers();
+  if (!shouldOpen) return;
+  if (name === "notifications") renderNotificationPopover();
+  else renderProfilePopover();
+  panel.hidden = false;
+  button.setAttribute("aria-expanded", "true");
+}
+
+function updateNotificationIndicator() {
+  const count = stockNotifications().length;
+  const button = $("#notification-button");
+  const badge = $("#notification-count");
+  badge.hidden = count === 0;
+  badge.textContent = count > 9 ? "9+" : String(count);
+  button.setAttribute("aria-label", count ? `Bildirimler, ${count} stok uyarısı` : "Bildirimler, uyarı yok");
+  button.title = count ? `${count} kritik stok uyarısı` : "Kritik stok uyarısı yok";
+}
 
 async function api(path, options = {}) {
   let response;
@@ -69,12 +139,13 @@ async function refreshState() {
 
 function showAuthenticatedApp(user) {
   currentUser = user;
-  const initials = (user.fullName || user.email).split(/[\s@._-]+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toLocaleUpperCase("tr-TR");
+  const initials = getUserInitials(user);
   $("#profile-name").textContent = user.fullName || user.email;
   $("#profile-role").textContent = user.email;
   $("#profile-avatar").textContent = initials || "SP";
   $("#top-avatar").textContent = initials || "SP";
   $("#top-avatar").title = user.fullName || user.email;
+  $("#top-avatar").setAttribute("aria-label", `Hesap menüsünü aç: ${user.fullName || user.email}`);
   $("#auth-screen").hidden = true;
   $("#app-shell").hidden = false;
   render();
@@ -125,12 +196,14 @@ async function logout() {
   }
   currentUser = null;
   state = { warehouses: [], products: [], movements: [] };
+  closeTopbarPopovers();
   $("#modal-root").innerHTML = "";
   $("#app-shell").hidden = true;
   $("#auth-screen").hidden = false;
 }
 
 function setView(view) {
+  closeTopbarPopovers();
   const allowed = ["overview", "inventory", "products", "warehouses", "movements"];
   currentView = allowed.includes(view) ? view : "overview";
   location.hash = currentView;
@@ -309,6 +382,8 @@ function render() {
   $("#breadcrumb-current").textContent = views[currentView][0];
   $("#page-content").innerHTML = views[currentView][1]();
   $("#nav-stock-count").textContent = activeProducts().filter((product) => statusOf(product) !== "ok").length;
+  updateNotificationIndicator();
+  if (!$("#notification-popover").hidden) renderNotificationPopover();
 }
 
 function productOptions(selected = "") {
@@ -522,19 +597,39 @@ function exportCsv() {
 }
 
 function showHelp() {
-  alert("Hızlı başlangıç\n\n1. Ürünler bölümünden ürün ekle.\n2. Depolar bölümünde lokasyonlarını tanımla.\n3. Stok işlemi ile giriş, çıkış, sayım düzeltmesi veya transfer kaydet.\n4. Stok durumu ve hareketler ekranından kayıtlarını takip et.\n\nKayıtlar sunucu veritabanında saklanır.");
+  const root = $("#modal-root");
+  root.innerHTML = `<div class="modal-backdrop" data-action="close-modal"><section class="modal help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title" aria-describedby="help-intro-text">
+    <header class="modal-head help-modal-head"><div><p class="help-eyebrow">STOKPILOT KULLANIM REHBERİ</p><h2 id="help-title" tabindex="-1">Stoklarını adım adım yönet</h2><p>Ürünleri ve depoları tanımla, hareketleri kaydet, kritik seviyeleri erkenden fark et.</p></div><button class="modal-close" type="button" data-action="close-modal" aria-label="Rehberi kapat">${icon("close")}</button></header>
+    <div class="help-content">
+      <div class="help-intro"><span class="help-intro-icon">${icon("spark")}</span><div><strong>Önerilen başlangıç sırası</strong><p id="help-intro-text">Önce ürün kataloğunu ve depo konumlarını oluştur. Ardından her ürünün mevcut miktarını stok girişi olarak ekle. Sonraki giriş, çıkış, sayım ve transferler hareket geçmişine kaydedilir.</p></div></div>
+      <div class="help-step-grid">
+        <article class="help-step"><span class="help-step-number">01</span><div><h3>Ürün kataloğunu oluştur</h3><p>Ürünler ekranından ürün adı, benzersiz SKU kodu, kategori ve birimi ekle. Minimum stok seviyesi, sistemin ne zaman uyarı vereceğini belirler. Birim maliyet stok değerinin hesaplanmasına yardımcı olur.</p><button class="button button-small" type="button" data-view="products">Ürünlere git <span aria-hidden="true">→</span></button></div></article>
+        <article class="help-step"><span class="help-step-number">02</span><div><h3>Depo konumlarını tanımla</h3><p>Her fiziksel lokasyon için benzersiz bir depo kodu ve anlaşılır bir ad kullan. Böylece aynı ürünün hangi depoda bulunduğunu ayrı ayrı takip edebilirsin.</p><button class="button button-small" type="button" data-view="warehouses">Depolara git <span aria-hidden="true">→</span></button></div></article>
+        <article class="help-step"><span class="help-step-number">03</span><div><h3>Stok işlemlerini kaydet</h3><p>Stok girişinde miktar artar, çıkışta azalır. Sayım düzeltmesinde gerçek sayım miktarını gir; sistem farkı hesaplar. Transferde kaynak ve hedef depoyu seç. Yetersiz stokla çıkış yapılamaz.</p><button class="button button-small" type="button" data-view="movements">Hareket geçmişini gör <span aria-hidden="true">→</span></button></div></article>
+        <article class="help-step"><span class="help-step-number">04</span><div><h3>Stok seviyelerini izle</h3><p>Genel bakış toplam ürün çeşidini, stok miktarını ve yaklaşık stok değerini özetler. Stok Durumu ekranında ürünleri ve depoları filtreleyebilir; miktarı minimum seviyede olanları görebilirsin.</p><button class="button button-small" type="button" data-view="inventory">Stok durumuna git <span aria-hidden="true">→</span></button></div></article>
+        <article class="help-step"><span class="help-step-number">05</span><div><h3>Bildirimleri takip et</h3><p>Ürün toplamı minimum stok seviyesine indiğinde veya sıfırlandığında zil simgesinde uyarı görünür. Zile tıklayarak uyarı listesini aç; bir uyarı seni stok ekranına götürür.</p></div></article>
+        <article class="help-step"><span class="help-step-number">06</span><div><h3>Raporla ve hesabını yönet</h3><p>Genel bakıştaki Dışa aktar düğmesi envanteri CSV olarak indirir. Profil dairesi oturum açan kişinin baş harflerini gösterir; menüden e-posta bilgini görebilir ve güvenli şekilde çıkış yapabilirsin.</p></div></article>
+      </div>
+      <div class="help-tip"><strong>İpucu</strong><span>Ürün veya depo geçmişi varsa silmek yerine arşivle. Kayıtlar korunur, arşivlenenler yeni stok işlemlerinde seçilemez.</span></div>
+    </div>
+  </section></div>`;
+  $("#help-title").focus();
 }
 
 document.addEventListener("click", (event) => {
+  if (!event.target.closest(".popover-anchor")) closeTopbarPopovers();
   const viewLink = event.target.closest("[data-view]");
   if (viewLink) {
     event.preventDefault();
+    if (viewLink.closest("#modal-root")) $("#modal-root").innerHTML = "";
     setView(viewLink.dataset.view);
     return;
   }
   const actionElement = event.target.closest("[data-action]");
   if (!actionElement) return;
   const { action } = actionElement.dataset;
+  if (action === "toggle-notifications") { toggleTopbarPopover("notifications"); return; }
+  if (action === "toggle-profile") { toggleTopbarPopover("profile"); return; }
   if (action === "logout") { logout(); return; }
   if (action === "open-product") openModal("product");
   if (action === "edit-product") openProductEditor(actionElement.dataset.productId);
@@ -600,6 +695,7 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     $("#modal-root").innerHTML = "";
     $("#sidebar").classList.remove("open");
+    closeTopbarPopovers();
   }
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
     event.preventDefault();

@@ -6,8 +6,8 @@
     <meta name="theme-color" content="#f5f6f2" />
     <meta name="description" content="Ürün ve depo stoklarını tek bir ekrandan takip edin." />
     <title>StokPilot — Stok ve Depo Yönetimi</title>
-    <link rel="stylesheet" href="./styles.css" />
-    <link rel="stylesheet" href="./auth.css" />
+    <link rel="stylesheet" href="./styles.css?v=20261020-help-responsive-2" />
+    <link rel="stylesheet" href="./auth.css?v=20261020-help-responsive-2" />
   </head>
   <body>
     <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -88,8 +88,16 @@
           <div class="topbar-actions">
             <label class="global-search"><svg><use href="#i-search"/></svg><input id="global-search" type="search" placeholder="Ürün, SKU veya depo ara..." autocomplete="off"><kbd>⌘ K</kbd></label>
             <span class="demo-chip"><i></i> Sunucu verisi</span>
-            <button class="icon-button notification-button" aria-label="Bildirimler"><svg><use href="#i-bell"/></svg><i></i></button>
-            <span class="top-avatar" id="top-avatar" title="StokPilot yöneticisi">SP</span>
+            <div class="popover-anchor notification-anchor">
+              <button class="icon-button notification-button" id="notification-button" type="button" data-action="toggle-notifications" aria-label="Bildirimler" aria-haspopup="dialog" aria-expanded="false" aria-controls="notification-popover">
+                <svg><use href="#i-bell"/></svg><span class="notification-count" id="notification-count" hidden></span>
+              </button>
+              <section class="topbar-popover notification-popover" id="notification-popover" role="dialog" aria-modal="false" aria-label="Stok bildirimleri" hidden></section>
+            </div>
+            <div class="popover-anchor profile-anchor">
+              <button class="top-avatar" id="top-avatar" type="button" data-action="toggle-profile" title="StokPilot hesabı" aria-label="Hesap menüsünü aç" aria-haspopup="dialog" aria-expanded="false" aria-controls="profile-popover">SP</button>
+              <section class="topbar-popover profile-popover" id="profile-popover" role="dialog" aria-modal="false" aria-label="Hesap bilgileri" hidden></section>
+            </div>
           </div>
         </header>
         <section class="page-content" id="page-content" aria-live="polite"></section>
@@ -98,6 +106,6 @@
     </div>
     <div id="modal-root"></div>
     <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
-    <script src="./app.js" defer></script>
+    <script src="./app.js?v=20261020-help-responsive-2" defer></script>
   </body>
 </html>

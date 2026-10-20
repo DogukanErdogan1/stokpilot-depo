@@ -23,6 +23,8 @@ npm run dev
 
 Tarayıcıda `http://localhost:3000` adresini aç. İlk başlatmada yönetici hesabı oluşturulur; parola SQLite'ta scrypt özeti olarak saklanır. Kullanıcı kaydı açık değildir ve varsayılan demo hesabı yoktur. Var olan yönetici hesabının parolası `.env` değiştirilerek otomatik sıfırlanmaz.
 
+Demo hesabına örnek ürün, depo, stok bakiyesi ve hareket geçmişi eklemek için API klasöründe `npm run seed:demo` çalıştır. Komut mevcut kayıtları silmez; SKU veya depo kodu zaten varsa tekrar eklemez. Demo verisi canlı ortamda çalıştırılmaz.
+
 Parolayı değiştirmek için `.env` içindeki `ADMIN_EMAIL` ve `ADMIN_PASSWORD` değerlerini güncelle, `npm run build` çalıştır ve `npm run admin:reset` komutunu bir kez yürüt. Bu işlem etkin oturumları kapatır.
 
 Bun ile geliştirme sunucusu: `bun install` ve `bun run dev:bun`.

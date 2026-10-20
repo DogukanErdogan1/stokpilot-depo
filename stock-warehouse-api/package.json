@@ -10,6 +10,7 @@
     "dev": "tsx watch src/server.ts",
     "dev:bun": "bun --watch src/server.ts",
     "sync:ui": "node scripts/sync-ui.mjs",
+    "seed:demo": "tsx scripts/seed-demo.ts",
     "build": "tsc -p tsconfig.json",
     "admin:reset": "node dist/admin-password.js",
     "start": "node dist/server.js"

@@ -73,7 +73,7 @@ export async function buildApp() {
         try {
           const content = await readFile(resolve(publicDirectory, asset.file));
           reply.type(asset.type);
-          reply.header("Cache-Control", assetName === "index.html" ? "no-cache" : "public, max-age=3600");
+          reply.header("Cache-Control", "no-cache");
           if (assetName === "index.html") {
             reply.header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'");
           }
