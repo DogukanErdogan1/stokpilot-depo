@@ -6,6 +6,8 @@ let currentView = location.hash.slice(1) || "overview";
 let currentSearch = "";
 let inventoryWarehouseFilter = "all";
 let movementTypeFilter = "all";
+let movementProductResults = [];
+let movementProductActiveIndex = -1;
 let showArchivedProducts = false;
 let showArchivedWarehouses = false;
 
@@ -300,12 +302,17 @@ function productRows(products) {
   }).join("");
 }
 
+function pageSearchControl(id, placeholder) {
+  const hasQuery = Boolean(currentSearch.trim());
+  return `<div class="table-search-wrap"><label class="visually-hidden" for="${id}">${esc(placeholder)}</label><input class="table-search" id="${id}" type="search" placeholder="${esc(placeholder)}" value="${esc(currentSearch)}"><button class="table-search-clear" type="button" data-action="clear-page-search" aria-label="Aramayı temizle" title="Aramayı temizle" ${hasQuery ? "" : "hidden"}>×</button></div>`;
+}
+
 function renderProducts() {
   const actions = `<button class="button" data-action="export-csv">${icon("download")} CSV indir</button><button class="button button-primary" data-action="open-product">${icon("plus")} Yeni ürün</button>`;
   const archivedCount = state.products.filter((product) => product.archived).length;
   const visibleCount = filteredProducts().length;
   return `${pageHeading("ENVANTER", "Ürünler", "Ürün kataloğunu ve toplam stok seviyelerini yönet.", actions)}
-    <div class="page-toolbar"><div class="page-toolbar-left"><input class="table-search" id="product-search" type="search" placeholder="Ürün adı, SKU veya kategori ara..." value="${esc(currentSearch)}"><span class="table-count">${visibleCount} ${showArchivedProducts ? "arşivlenmiş" : "aktif"} ürün</span></div><div class="page-toolbar-right"><button class="button button-small" data-action="toggle-archived-products">${showArchivedProducts ? "Aktif ürünler" : `Arşivdekiler (${archivedCount})`}</button><button class="button button-small" data-action="open-warehouse">${icon("plus")} Depo ekle</button></div></div>
+    <div class="page-toolbar"><div class="page-toolbar-left">${pageSearchControl("product-search", "Ürün adı, SKU veya kategori ara...")}<span class="table-count">${visibleCount} ${showArchivedProducts ? "arşivlenmiş" : "aktif"} ürün</span></div><div class="page-toolbar-right"><button class="button button-small" data-action="toggle-archived-products">${showArchivedProducts ? "Aktif ürünler" : `Arşivdekiler (${archivedCount})`}</button><button class="button button-small" data-action="open-warehouse">${icon("plus")} Depo ekle</button></div></div>
     <section class="panel table-panel"><div class="table-scroll"><table class="data-table"><thead><tr><th>ÜRÜN</th><th>SKU</th><th>TOPLAM STOK</th><th>STOK DEĞERİ</th><th>DURUM</th><th></th></tr></thead><tbody>${productRows(filteredProducts())}</tbody></table></div></section>`;
 }
 
@@ -331,7 +338,7 @@ function renderInventory() {
   const warehouseOptions = activeWarehouses().map((warehouse) => `<option value="${esc(warehouse.id)}" ${inventoryWarehouseFilter === warehouse.id ? "selected" : ""}>${esc(warehouse.name)}</option>`).join("");
   const actions = `<button class="button" data-action="export-csv">${icon("download")} CSV indir</button><button class="button button-primary" data-action="open-movement">${icon("plus")} Stok işlemi</button>`;
   return `${pageHeading("ENVANTER", "Stok durumu", "Ürün bakiyelerini depo bazında incele ve güncelle.", actions)}
-    <div class="page-toolbar"><div class="page-toolbar-left"><input class="table-search" id="inventory-search" type="search" placeholder="Ürün veya SKU ara..." value="${esc(currentSearch)}"><select class="filter-control" id="warehouse-filter"><option value="all">Tüm depolar</option>${warehouseOptions}</select></div><div class="page-toolbar-right"><span class="table-count">${rows.length} stok satırı</span></div></div>
+    <div class="page-toolbar"><div class="page-toolbar-left">${pageSearchControl("inventory-search", "Ürün veya SKU ara...")}<select class="filter-control" id="warehouse-filter"><option value="all">Tüm depolar</option>${warehouseOptions}</select></div><div class="page-toolbar-right"><span class="table-count">${rows.length} stok satırı</span></div></div>
     <section class="panel table-panel"><div class="table-scroll"><table class="data-table"><thead><tr><th>ÜRÜN</th><th>DEPO</th><th>MEVCUT</th><th>MİNİMUM</th><th>DEPO DURUMU</th><th></th></tr></thead><tbody>${body}</tbody></table></div></section>`;
 }
 
@@ -365,7 +372,7 @@ function renderMovements() {
   const types = [["all", "Tüm hareketler"], ["INBOUND", "Stok girişleri"], ["OUTBOUND", "Stok çıkışları"], ["ADJUSTMENT", "Sayım düzeltmeleri"], ["TRANSFER_IN", "Transfer girişleri"], ["TRANSFER_OUT", "Transfer çıkışları"]];
   const actions = `<button class="button" data-action="export-csv">${icon("download")} CSV indir</button><button class="button button-primary" data-action="open-movement">${icon("plus")} Hareket ekle</button>`;
   return `${pageHeading("İŞLEM GEÇMİŞİ", "Stok hareketleri", "Stok girişlerini, çıkışlarını ve transferlerini takip et.", actions)}
-    <div class="page-toolbar"><div class="page-toolbar-left"><input class="table-search" id="movement-search" type="search" placeholder="Ürün, depo veya not ara..." value="${esc(currentSearch)}"><select class="filter-control" id="movement-filter">${types.map(([value, label]) => `<option value="${value}" ${movementTypeFilter === value ? "selected" : ""}>${label}</option>`).join("")}</select></div><div class="page-toolbar-right"><span class="table-count">${movements.length} hareket</span></div></div>
+    <div class="page-toolbar"><div class="page-toolbar-left">${pageSearchControl("movement-search", "Ürün, depo veya not ara...")}<select class="filter-control" id="movement-filter">${types.map(([value, label]) => `<option value="${value}" ${movementTypeFilter === value ? "selected" : ""}>${label}</option>`).join("")}</select></div><div class="page-toolbar-right"><span class="table-count">${movements.length} hareket</span></div></div>
     <section class="panel table-panel"><div class="table-scroll"><table class="data-table"><thead><tr><th>TARİH</th><th>ÜRÜN</th><th>İŞLEM</th><th>DEPO</th><th>MİKTAR</th><th>AÇIKLAMA</th></tr></thead><tbody>${rows || `<tr><td colspan="6"><div class="empty-state"><strong>Hareket bulunamadı</strong>Filtreleri temizleyip yeniden deneyebilirsin.</div></td></tr>`}</tbody></table></div></section>`;
 }
 
@@ -390,6 +397,80 @@ function productOptions(selected = "") {
   return activeProducts().map((product) => `<option value="${esc(product.id)}" ${selected === product.id ? "selected" : ""}>${esc(product.name)} · ${esc(product.sku)}</option>`).join("");
 }
 
+function renderMovementProductOptions(query = "", resetActive = false) {
+  const search = $("#movement-product-search");
+  const list = $("#movement-product-options");
+  if (!search || !list) return;
+  const selectedId = $("#movement-product")?.value || "";
+  const normalized = String(query).trim().toLocaleLowerCase("tr-TR");
+  movementProductResults = activeProducts().filter((product) =>
+    !normalized || [product.name, product.sku, product.category].some((value) => String(value || "").toLocaleLowerCase("tr-TR").includes(normalized))
+  );
+  if (resetActive) movementProductActiveIndex = movementProductResults.length ? 0 : -1;
+  else if (movementProductActiveIndex >= movementProductResults.length) movementProductActiveIndex = movementProductResults.length - 1;
+
+  list.innerHTML = movementProductResults.length ? movementProductResults.map((product, index) => `
+    <button id="movement-product-option-${index}" class="product-picker-option ${index === movementProductActiveIndex ? "is-active" : ""}" type="button" role="option" aria-selected="${product.id === selectedId}" data-action="select-movement-product" data-product-id="${esc(product.id)}">
+      <span><strong>${esc(product.name)}</strong><small>${esc(product.sku)} · ${esc(product.category || "Genel")}</small></span>
+      ${product.id === selectedId ? '<span class="product-picker-selected">Seçili</span>' : ""}
+    </button>`).join("") : '<div class="product-picker-empty" role="option" aria-disabled="true">Aramana uygun ürün bulunamadı.</div>';
+  const active = movementProductActiveIndex >= 0 ? document.getElementById(`movement-product-option-${movementProductActiveIndex}`) : null;
+  if (active) search.setAttribute("aria-activedescendant", active.id);
+  else search.removeAttribute("aria-activedescendant");
+}
+
+function setMovementProductActive(index) {
+  if (!movementProductResults.length) return;
+  movementProductActiveIndex = Math.max(0, Math.min(index, movementProductResults.length - 1));
+  renderMovementProductOptions($("#movement-product-search").value, false);
+  document.getElementById(`movement-product-option-${movementProductActiveIndex}`)?.scrollIntoView({ block: "nearest" });
+}
+
+function setMovementProductPickerOpen(open, returnFocus = false) {
+  const panel = $("#movement-product-panel");
+  const trigger = $("#movement-product-trigger");
+  const search = $("#movement-product-search");
+  if (!panel || !trigger || !search) return;
+  panel.hidden = !open;
+  trigger.setAttribute("aria-expanded", String(open));
+  search.setAttribute("aria-expanded", String(open));
+  if (open) {
+    search.value = "";
+    renderMovementProductOptions("", true);
+    search.focus();
+  } else {
+    search.value = "";
+    search.removeAttribute("aria-activedescendant");
+    movementProductResults = [];
+    movementProductActiveIndex = -1;
+    if (returnFocus) trigger.focus();
+  }
+}
+
+function selectMovementProduct(productId) {
+  const product = activeProducts().find((item) => item.id === productId);
+  if (!product) return;
+  $("#movement-product").value = product.id;
+  $("#movement-product-value").innerHTML = `<strong>${esc(product.name)}</strong><small>${esc(product.sku)} · ${esc(product.category || "Genel")}</small>`;
+  $("#movement-product-trigger").setAttribute("aria-label", `Seçili ürün: ${product.name}, SKU ${product.sku}. Değiştirmek için aç.`);
+  setMovementProductPickerOpen(false, true);
+  updateMovementFields();
+}
+
+function movementProductPicker(selected = "") {
+  const product = productById(selected) || activeProducts()[0];
+  return `<input id="movement-product" type="hidden" name="productId" value="${esc(product.id)}"><div class="product-picker" id="movement-product-picker">
+    <button class="product-picker-trigger" id="movement-product-trigger" type="button" data-action="toggle-movement-product-picker" aria-haspopup="listbox" aria-expanded="false" aria-controls="movement-product-panel" aria-label="Seçili ürün: ${esc(product.name)}, SKU ${esc(product.sku)}. Değiştirmek için aç.">
+      <span class="product-picker-value" id="movement-product-value"><strong>${esc(product.name)}</strong><small>${esc(product.sku)} · ${esc(product.category || "Genel")}</small></span><span class="product-picker-caret" aria-hidden="true">⌄</span>
+    </button>
+    <div class="product-picker-panel" id="movement-product-panel" hidden>
+      <label class="visually-hidden" for="movement-product-search">Ürün adı, SKU veya kategori ara</label>
+      <input class="product-picker-search" id="movement-product-search" type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="movement-product-options" autocomplete="off" placeholder="Ürün adı veya SKU ara...">
+      <div class="product-picker-options" id="movement-product-options" role="listbox" aria-label="Ürünler"></div>
+    </div>
+  </div>`;
+}
+
 function warehouseOptions(selected = "") {
   return activeWarehouses().map((warehouse) => `<option value="${esc(warehouse.id)}" ${selected === warehouse.id ? "selected" : ""}>${esc(warehouse.name)}</option>`).join("");
 }
@@ -407,7 +488,7 @@ function openModal(kind, presets = {}) {
     }
     const selectedProduct = presets.productId || state.products[0].id;
     const selectedWarehouse = presets.warehouseId || state.warehouses[0].id;
-    root.innerHTML = `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header class="modal-head"><div><h2 id="modal-title">Stok işlemi oluştur</h2><p>Giriş, çıkış, sayım düzeltmesi veya depo transferi.</p></div><button class="modal-close" data-action="close-modal" aria-label="Kapat">${icon("close")}</button></header><form class="modal-form" id="movement-form"><div class="form-grid"><div class="form-field full"><label for="movement-type">İşlem türü</label><select id="movement-type" name="type"><option value="INBOUND">Stok girişi</option><option value="OUTBOUND">Stok çıkışı</option><option value="ADJUSTMENT">Sayım düzeltmesi</option><option value="TRANSFER">Depolar arası transfer</option></select></div><div class="form-field full"><label for="movement-product">Ürün</label><select id="movement-product" name="productId">${productOptions(selectedProduct)}</select></div><div class="form-field full" id="single-warehouse-field"><label for="movement-warehouse">Depo</label><select id="movement-warehouse" name="warehouseId">${warehouseOptions(selectedWarehouse)}</select></div><div class="form-field" id="source-warehouse-field" hidden><label for="movement-source">Kaynak depo</label><select id="movement-source" name="sourceWarehouseId">${warehouseOptions(selectedWarehouse)}</select></div><div class="form-field" id="target-warehouse-field" hidden><label for="movement-target">Hedef depo</label><select id="movement-target" name="targetWarehouseId">${warehouseOptions(state.warehouses.find((item) => item.id !== selectedWarehouse)?.id || "")}</select></div><div class="form-field full"><label for="movement-quantity" id="movement-quantity-label">Miktar</label><input id="movement-quantity" name="quantity" type="number" min="1" step="1" value="1" required><span class="field-hint" id="movement-hint">${esc(productById(selectedProduct)?.unit || "adet")} cinsinden miktar gir.</span></div><div class="form-field full"><label for="movement-note">Açıklama <span style="font-weight:400;color:#9aa39c">(isteğe bağlı)</span></label><input id="movement-note" name="note" maxlength="120" placeholder="Örn. Tedarikçi teslimatı"></div></div><div class="form-error" id="form-error"></div><div class="modal-actions"><button type="button" class="button" data-action="close-modal">Vazgeç</button><button class="button button-primary" type="submit">İşlemi kaydet</button></div></form></section></div>`;
+    root.innerHTML = `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header class="modal-head"><div><h2 id="modal-title">Stok işlemi oluştur</h2><p>Giriş, çıkış, sayım düzeltmesi veya depo transferi.</p></div><button class="modal-close" data-action="close-modal" aria-label="Kapat">${icon("close")}</button></header><form class="modal-form" id="movement-form"><div class="form-grid"><div class="form-field full"><label for="movement-type">İşlem türü</label><select id="movement-type" name="type"><option value="INBOUND">Stok girişi</option><option value="OUTBOUND">Stok çıkışı</option><option value="ADJUSTMENT">Sayım düzeltmesi</option><option value="TRANSFER">Depolar arası transfer</option></select></div><div class="form-field full"><label for="movement-product-trigger">Ürün</label>${movementProductPicker(selectedProduct)}</div><div class="form-field full" id="single-warehouse-field"><label for="movement-warehouse">Depo</label><select id="movement-warehouse" name="warehouseId">${warehouseOptions(selectedWarehouse)}</select></div><div class="form-field" id="source-warehouse-field" hidden><label for="movement-source">Kaynak depo</label><select id="movement-source" name="sourceWarehouseId">${warehouseOptions(selectedWarehouse)}</select></div><div class="form-field" id="target-warehouse-field" hidden><label for="movement-target">Hedef depo</label><select id="movement-target" name="targetWarehouseId">${warehouseOptions(state.warehouses.find((item) => item.id !== selectedWarehouse)?.id || "")}</select></div><div class="form-field full"><label for="movement-quantity" id="movement-quantity-label">Miktar</label><input id="movement-quantity" name="quantity" type="number" min="1" step="1" value="1" required><span class="field-hint" id="movement-hint">${esc(productById(selectedProduct)?.unit || "adet")} cinsinden miktar gir.</span></div><div class="form-field full"><label for="movement-note">Açıklama <span style="font-weight:400;color:#9aa39c">(isteğe bağlı)</span></label><input id="movement-note" name="note" maxlength="120" placeholder="Örn. Tedarikçi teslimatı"></div></div><div class="form-error" id="form-error"></div><div class="modal-actions"><button type="button" class="button" data-action="close-modal">Vazgeç</button><button class="button button-primary" type="submit">İşlemi kaydet</button></div></form></section></div>`;
     updateMovementFields();
   }
   const firstInput = $("input:not([type=hidden]), select", root);
@@ -618,6 +699,7 @@ function showHelp() {
 
 document.addEventListener("click", (event) => {
   if (!event.target.closest(".popover-anchor")) closeTopbarPopovers();
+  if (!event.target.closest("#movement-product-picker")) setMovementProductPickerOpen(false);
   const viewLink = event.target.closest("[data-view]");
   if (viewLink) {
     event.preventDefault();
@@ -628,6 +710,16 @@ document.addEventListener("click", (event) => {
   const actionElement = event.target.closest("[data-action]");
   if (!actionElement) return;
   const { action } = actionElement.dataset;
+  if (action === "clear-page-search") {
+    currentSearch = "";
+    $("#global-search").value = "";
+    const searchId = currentView === "products" ? "#product-search" : currentView === "inventory" ? "#inventory-search" : "#movement-search";
+    render();
+    $(searchId)?.focus();
+    return;
+  }
+  if (action === "toggle-movement-product-picker") { setMovementProductPickerOpen(Boolean($("#movement-product-panel")?.hidden), true); return; }
+  if (action === "select-movement-product") { selectMovementProduct(actionElement.dataset.productId); return; }
   if (action === "toggle-notifications") { toggleTopbarPopover("notifications"); return; }
   if (action === "toggle-profile") { toggleTopbarPopover("profile"); return; }
   if (action === "logout") { logout(); return; }
@@ -674,9 +766,14 @@ document.addEventListener("change", (event) => {
 });
 
 document.addEventListener("input", (event) => {
+  if (event.target.matches("#movement-product-search")) {
+    renderMovementProductOptions(event.target.value, true);
+    return;
+  }
   if (event.target.matches("#global-search, #product-search, #inventory-search, #movement-search")) {
     currentSearch = event.target.value;
     if (event.target.id !== "global-search") {
+      $("#global-search").value = currentSearch;
       const cursor = event.target.selectionStart;
       const id = event.target.id;
       render();
@@ -692,6 +789,12 @@ document.addEventListener("input", (event) => {
 
 $("#mobile-menu").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
 document.addEventListener("keydown", (event) => {
+  if (event.target?.matches?.("#movement-product-search") && !$("#movement-product-panel")?.hidden) {
+    if (event.key === "ArrowDown") { event.preventDefault(); setMovementProductActive(movementProductActiveIndex + 1); return; }
+    if (event.key === "ArrowUp") { event.preventDefault(); setMovementProductActive(movementProductActiveIndex - 1); return; }
+    if (event.key === "Enter") { event.preventDefault(); const product = movementProductResults[movementProductActiveIndex]; if (product) selectMovementProduct(product.id); return; }
+    if (event.key === "Escape") { event.preventDefault(); setMovementProductPickerOpen(false, true); return; }
+  }
   if (event.key === "Escape") {
     $("#modal-root").innerHTML = "";
     $("#sidebar").classList.remove("open");
