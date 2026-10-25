@@ -4,9 +4,9 @@ import { db } from "./db.js";
 const day = 24 * 60 * 60 * 1000;
 
 const warehouseSeeds = [
-  { code: "DEMO-DEP-01", name: "Doğu Demo Deposu", address: "Erzurum, Türkiye" },
-  { code: "DEMO-IST-MRK", name: "İstanbul Demo Deposu", address: "Esenyurt, İstanbul" },
-  { code: "DEMO-ANK-01", name: "Ankara Demo Deposu", address: "Yenimahalle, Ankara" },
+  { code: "DEMO-DEP-01", name: "Doğu Demo Deposu", address: "Erzurum, Türkiye", location: "Erzurum" },
+  { code: "DEMO-IST-MRK", name: "İstanbul Demo Deposu", address: "Esenyurt, İstanbul", location: "İstanbul" },
+  { code: "DEMO-ANK-01", name: "Ankara Demo Deposu", address: "Yenimahalle, Ankara", location: "Ankara" },
 ];
 
 const productSeeds = [
@@ -28,14 +28,14 @@ const productSeeds = [
 export function seedDemoWorkspace(workspaceId: string): void {
   const seed = db.transaction(() => {
     const getWarehouse = db.prepare("SELECT id, archived FROM warehouses WHERE workspace_id = ? AND code = ?");
-    const addWarehouse = db.prepare("INSERT INTO warehouses (id, workspace_id, code, name, address) VALUES (?, ?, ?, ?, ?)");
+    const addWarehouse = db.prepare("INSERT INTO warehouses (id, workspace_id, code, name, address, location) VALUES (?, ?, ?, ?, ?, ?)");
     const warehouses: Array<{ id: string; code: string }> = [];
 
     for (const warehouseSeed of warehouseSeeds) {
       let warehouse = getWarehouse.get(workspaceId, warehouseSeed.code) as { id: string; archived: number } | undefined;
       if (!warehouse) {
         const id = randomUUID();
-        addWarehouse.run(id, workspaceId, warehouseSeed.code, warehouseSeed.name, warehouseSeed.address);
+        addWarehouse.run(id, workspaceId, warehouseSeed.code, warehouseSeed.name, warehouseSeed.address, warehouseSeed.location);
         warehouse = { id, archived: 0 };
       }
       if (warehouse.archived) throw new Error(`Demo verisi için ${warehouseSeed.code} deposunu önce etkinleştirin.`);

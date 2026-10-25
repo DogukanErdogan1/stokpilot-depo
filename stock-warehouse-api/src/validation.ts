@@ -73,16 +73,26 @@ export const stockListQuerySchema = z.object({
 });
 export const productListQuerySchema = stockListQuerySchema;
 
+export const warehouseListQuerySchema = z.object({
+  ...paginationShape,
+  q: z.string().trim().max(160).optional(),
+  location: z.string().trim().max(500).optional(),
+  archived: z.enum(["true", "false"]).default("false").transform(value => value === "true"),
+  sort: z.enum(["name", "quantity-desc", "products-desc", "critical-desc"]).default("name"),
+});
+
 export const createWarehouseSchema = z.object({
   code: z.string().trim().min(1).max(32),
   name: z.string().trim().min(1).max(160),
   address: optionalText(500),
+  location: optionalText(160),
 });
 
 export const updateWarehouseSchema = z.object({
   code: z.string().trim().min(1).max(32).optional(),
   name: z.string().trim().min(1).max(160).optional(),
   address: optionalText(500),
+  location: optionalText(160),
   archived: z.boolean().optional(),
 }).refine((data) => Object.values(data).some((value) => value !== undefined), {
   message: "En az bir alan göndermelisiniz.",

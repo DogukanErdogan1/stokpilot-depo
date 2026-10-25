@@ -96,6 +96,7 @@ addColumnIfMissing("products", "cost", "INTEGER NOT NULL DEFAULT 0 CHECK (cost >
 addColumnIfMissing("products", "symbol", "TEXT NOT NULL DEFAULT '□'");
 addColumnIfMissing("products", "archived", "INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1))");
 addColumnIfMissing("warehouses", "archived", "INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1))");
+addColumnIfMissing("warehouses", "location", "TEXT");
 
 addColumnIfMissing("users", "workspace_id", "TEXT REFERENCES workspaces(id) ON DELETE CASCADE");
 addColumnIfMissing("products", "workspace_id", "TEXT REFERENCES workspaces(id) ON DELETE CASCADE");
@@ -135,3 +136,5 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_inventory_workspace_product ON inventory_balances(workspace_id, product_id, warehouse_id);
   CREATE INDEX IF NOT EXISTS idx_inventory_workspace_warehouse ON inventory_balances(workspace_id, warehouse_id, product_id);
 `);
+
+db.exec("CREATE INDEX IF NOT EXISTS idx_warehouses_workspace_archive_name ON warehouses(workspace_id, archived, name COLLATE NOCASE, id)");
