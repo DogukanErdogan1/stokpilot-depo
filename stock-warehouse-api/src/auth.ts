@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID, scrypt, timingSafeEqual, createHash } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { db } from "./db.js";
+import { seedDemoWorkspace } from "./demo-data.js";
 import { AppError } from "./errors.js";
 import { loginSchema, parse } from "./validation.js";
 
@@ -10,8 +11,17 @@ const PASSWORD_BYTES = 64;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const MAX_LOGIN_ATTEMPTS = 10;
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+const demoLoginAttempts = new Map<string, { count: number; resetAt: number }>();
+const MAX_DEMO_LOGIN_ATTEMPTS = 1000;
 
 type PasswordHash = { salt: string; hash: string };
+export type AuthenticatedUser = { id: string; email: string; fullName: string; workspaceId: string };
+
+declare module "fastify" {
+  interface FastifyRequest {
+    authUser?: AuthenticatedUser;
+  }
+}
 
 function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
@@ -65,6 +75,25 @@ function setSessionCookie(reply: FastifyReply, value: string, maxAge: number): v
   reply.header("Set-Cookie", `${SESSION_COOKIE}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure}`);
 }
 
+function createSession(userId: string, reply: FastifyReply): void {
+  db.prepare("DELETE FROM sessions WHERE expires_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now')").run();
+  const rawToken = randomBytes(32).toString("base64url");
+  const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
+  db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)").run(sessionHash(rawToken), userId, expiresAt);
+  setSessionCookie(reply, rawToken, SESSION_TTL_MS / 1000);
+}
+
+function isDemoLoginRateLimited(ip: string, now = Date.now()): boolean {
+  const current = demoLoginAttempts.get(ip);
+  if (!current || current.resetAt <= now) {
+    demoLoginAttempts.set(ip, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+    return false;
+  }
+  if (current.count >= MAX_DEMO_LOGIN_ATTEMPTS) return true;
+  current.count += 1;
+  return false;
+}
+
 export async function createInitialAdmin(): Promise<void> {
   const existing = db.prepare("SELECT id FROM users LIMIT 1").get();
   if (existing) return;
@@ -80,8 +109,55 @@ export async function createInitialAdmin(): Promise<void> {
   }
 
   const passwordDigest = await hashPassword(password);
-  db.prepare("INSERT INTO users (id, email, full_name, password_hash) VALUES (?, ?, ?, ?)")
-    .run(randomUUID(), email, process.env.ADMIN_NAME?.trim() || "StokPilot Yöneticisi", `scrypt$${passwordDigest.salt}$${passwordDigest.hash}`);
+  const workspaceId = randomUUID();
+  const userId = randomUUID();
+  const transaction = db.transaction(() => {
+    db.prepare("INSERT INTO workspaces (id, name) VALUES (?, ?)")
+      .run(workspaceId, process.env.ADMIN_NAME?.trim() || "StokPilot Yöneticisi");
+    db.prepare("INSERT INTO users (id, email, full_name, password_hash, workspace_id) VALUES (?, ?, ?, ?, ?)")
+      .run(userId, email, process.env.ADMIN_NAME?.trim() || "StokPilot Yöneticisi", `scrypt$${passwordDigest.salt}$${passwordDigest.hash}`, workspaceId);
+  });
+  transaction.immediate();
+}
+
+export async function createDemoAccount(): Promise<void> {
+  const configuredEmail = process.env.DEMO_EMAIL?.trim() ?? "";
+  const password = process.env.DEMO_PASSWORD ?? "";
+  if (!configuredEmail && !password) return;
+
+  const email = normalizeEmail(configuredEmail);
+  if (!email || !password) {
+    throw new Error("Demo hesabı için DEMO_EMAIL ve DEMO_PASSWORD birlikte tanımlanmalıdır.");
+  }
+  if (!validAdminEmail(email)) throw new Error("DEMO_EMAIL geçerli bir e-posta adresi olmalıdır.");
+  if (password.length < 12) throw new Error("DEMO_PASSWORD en az 12 karakter olmalıdır.");
+  if (email === normalizeEmail(process.env.ADMIN_EMAIL ?? "")) {
+    throw new Error("Demo hesabı e-postası yönetici hesabından farklı olmalıdır.");
+  }
+
+  const existing = db.prepare("SELECT id, workspace_id AS workspaceId FROM users WHERE email = ?").get(email) as { id: string; workspaceId: string | null } | undefined;
+  if (existing) return;
+
+  const passwordDigest = await hashPassword(password);
+  const workspaceId = randomUUID();
+  const userId = randomUUID();
+  const name = process.env.DEMO_NAME?.trim() || "StokPilot Demo";
+  const transaction = db.transaction(() => {
+    db.prepare("INSERT INTO workspaces (id, name) VALUES (?, ?)").run(workspaceId, name);
+    db.prepare("INSERT INTO users (id, email, full_name, password_hash, workspace_id) VALUES (?, ?, ?, ?, ?)")
+      .run(userId, email, name, `scrypt$${passwordDigest.salt}$${passwordDigest.hash}`, workspaceId);
+  });
+  transaction.immediate();
+  try {
+    seedDemoWorkspace(workspaceId);
+  } catch (error) {
+    const rollback = db.transaction(() => {
+      db.prepare("DELETE FROM users WHERE id = ?").run(userId);
+      db.prepare("DELETE FROM workspaces WHERE id = ?").run(workspaceId);
+    });
+    rollback.immediate();
+    throw error;
+  }
 }
 
 export async function resetAdminPasswordFromEnvironment(): Promise<void> {
@@ -102,16 +178,16 @@ export async function resetAdminPasswordFromEnvironment(): Promise<void> {
   transaction.immediate();
 }
 
-export async function getAuthenticatedUser(request: FastifyRequest): Promise<{ id: string; email: string; fullName: string } | null> {
+export async function getAuthenticatedUser(request: FastifyRequest): Promise<AuthenticatedUser | null> {
   const token = parseCookie(request, SESSION_COOKIE);
   if (!token || token.length < 32) return null;
   const session = db.prepare(`
-    SELECT users.id, users.email, users.full_name AS fullName
+    SELECT users.id, users.email, users.full_name AS fullName, users.workspace_id AS workspaceId
     FROM sessions JOIN users ON users.id = sessions.user_id
     WHERE sessions.id = ? AND sessions.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-  `).get(sessionHash(token)) as { id: string; email: string; fullName: string } | undefined;
+  `).get(sessionHash(token)) as AuthenticatedUser | undefined;
   if (!session) return null;
-  return { id: session.id, email: session.email, fullName: session.fullName };
+  return { id: session.id, email: session.email, fullName: session.fullName, workspaceId: session.workspaceId };
 }
 
 export async function requireAuth(request: FastifyRequest, reply: FastifyReply): Promise<void> {
@@ -120,7 +196,7 @@ export async function requireAuth(request: FastifyRequest, reply: FastifyReply):
     await reply.code(401).send({ error: { code: "UNAUTHENTICATED", message: "Oturumunuz sona ermiş. Yeniden giriş yapın." } });
     return;
   }
-  (request as FastifyRequest & { authUser: typeof user }).authUser = user;
+  request.authUser = user;
 }
 
 function isAllowedOrigin(request: FastifyRequest): boolean {
@@ -168,12 +244,26 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     }
 
     loginAttempts.delete(key);
-    db.prepare("DELETE FROM sessions WHERE expires_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now')").run();
-    const rawToken = randomBytes(32).toString("base64url");
-    const sessionId = sessionHash(rawToken);
-    const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
-    db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)").run(sessionId, user.id, expiresAt);
-    setSessionCookie(reply, rawToken, SESSION_TTL_MS / 1000);
+    createSession(user.id, reply);
+    return { authenticated: true, user: { email: user.email, fullName: user.fullName } };
+  });
+
+  app.post("/api/auth/demo-login", async (request, reply) => {
+    if (isDemoLoginRateLimited(request.ip)) {
+      return reply.code(429).send({ error: { code: "RATE_LIMITED", message: "Demo girişinde çok fazla istek yapıldı. Bir süre sonra yeniden deneyin." } });
+    }
+
+    const configuredEmail = process.env.DEMO_EMAIL?.trim() ?? "";
+    const email = normalizeEmail(configuredEmail);
+    const adminEmail = normalizeEmail(process.env.ADMIN_EMAIL ?? "");
+    if (!email || email === adminEmail) {
+      throw new AppError(503, "DEMO_UNAVAILABLE", "Demo hesabı şu anda kullanılamıyor.");
+    }
+    const user = db.prepare("SELECT id, email, full_name AS fullName FROM users WHERE email = ? AND workspace_id IS NOT NULL")
+      .get(email) as { id: string; email: string; fullName: string } | undefined;
+    if (!user) throw new AppError(503, "DEMO_UNAVAILABLE", "Demo hesabı şu anda kullanılamıyor.");
+
+    createSession(user.id, reply);
     return { authenticated: true, user: { email: user.email, fullName: user.fullName } };
   });
 
