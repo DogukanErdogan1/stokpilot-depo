@@ -74,3 +74,11 @@ Arama, kategori, depo, stok durumu, maliyet/miktar/depo sayısı sınırları ve
 `GET /api/overview` toplamları, depo özetlerini, en fazla sekiz stok uyarısını ve beş son hareketi döndürür. Ürün seçici her istekte 20 sonuç getirir. `GET /api/export?view=inventory` (veya `products`, `movements`) aynı filtrelere uyan bütün kayıtları CSV olarak 500 satırlık parçalarla gönderir; ekranın sayfa boyutu dışa aktarımı sınırlandırmaz.
 
 `npm test` derlemeyi, geçici test veritabanında 10.000 ürünlük API kontrollerini ve arayüzün istek/sayfalama kontrollerini çalıştırır. Gerçek uygulama veritabanını kullanmaz.
+
+## Depo arama ve konum filtreleri
+
+`GET /api/warehouses?page=1&pageSize=25&q=istanbul&location=İstanbul&sort=quantity-desc&archived=false` depoları ad, kod, adres ve konum üzerinden arar; sayfalama SQL filtrelerinden sonra uygulanır. `sort`: `name`, `quantity-desc`, `products-desc`, `critical-desc`. Yanıt `items` ve `pagination` yanında çalışma alanına özel `facets.locations` ve aktif/arşivlenmiş depo sayılarını içeren `counts` alanlarını döndürür. Konum seçeneklerinin sayıları seçilen aktif/arşiv görünümüne aittir.
+
+Depo oluşturma ve düzenlemede isteğe bağlı, en fazla 160 karakterli `location` alanı şehir/ilçe bilgisini saklar. `null` konumu temizler; alan gönderilmezse mevcut değer korunur. Konumu olmayan eski kayıtlarda mevcut adres filtre değeri olarak kullanılır; adresi de olmayanlar `location=` ile bulunabilir. Geçiş mevcut adresleri değiştirmez.
+
+Stok hareketleri ekranında mevcut alt sayfalama çubuğuna ek olarak tablonun üstünde de önceki/sonraki sayfa düğmeleri ve sayfa bilgisi bulunur.

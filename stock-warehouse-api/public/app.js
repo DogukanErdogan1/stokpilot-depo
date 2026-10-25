@@ -9,6 +9,7 @@ let movementProductResults = [];
 let movementProductActiveIndex = -1;
 let showArchivedProducts = false;
 let showArchivedWarehouses = false;
+const warehouseFilters = {location:null, sort:"name"};
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -22,7 +23,7 @@ const dateShort = (value) => new Intl.DateTimeFormat("tr-TR", { day: "2-digit", 
 const dateTime = (value) => new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 const statusOf = (product) => statusFor(sumStock(product), product.minimum);
 const productById = id => [...state.products, ...listPages.products.items, ...listPages.inventory.items.map(row=>row.product), ...(state.alerts || []), ...movementProductResults].find(product=>product.id===id);
-const warehouseById = (id) => state.warehouses.find((warehouse) => warehouse.id === id);
+const warehouseById = id => listPages.warehouses.items.find(warehouse=>warehouse.id===id) || state.warehouses.find(warehouse=>warehouse.id===id);
 const activeProducts = () => state.products.filter((product) => !product.archived);
 const activeWarehouses = () => state.warehouses.filter((warehouse) => !warehouse.archived);
 const getUserInitials = (user) => (user.fullName || user.email || "StokPilot").split(/[\s@._-]+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toLocaleUpperCase("tr-TR") || "SP";
@@ -199,10 +200,11 @@ async function api(path, options = {}) {
   return result;
 }
 
-const listPages = Object.fromEntries(["products", "inventory", "movements"].map(view => [view, {
+const listPages = Object.fromEntries(["products", "inventory", "movements", "warehouses"].map(view => [view, {
   page: 1, pageSize: 25, total: 0, totalPages: 1, items: [], key: "", loading: false, error: "", request: 0, controller: null, timer: null, deferred: false,
 }]));
 const metric = key => Number(state.summary?.metrics?.[key] || 0);
+const normalizeWarehouse = warehouse => ({...warehouse, archived:Boolean(warehouse.archived)});
 const normalizeProduct = p => ({ ...p, minimum: p.minimumStockQuantity, archived: Boolean(p.archived), stock: p.stock || {} });
 const normalizeMovement = m => ({ ...m, delta: m.quantityDelta, at: m.createdAt,
   product: { id: m.productId, name: m.productName, sku: m.sku, unit: m.unit, symbol: m.symbol },
@@ -211,6 +213,12 @@ function listParams(view) {
   const page = listPages[view];
   const params = new URLSearchParams({ page: String(page?.page || 1), pageSize: String(page?.pageSize || 25) });
   if (currentSearch.trim()) params.set("q", currentSearch.trim());
+  if (view === "warehouses") {
+    params.set("archived",String(showArchivedWarehouses));
+    params.set("sort",warehouseFilters.sort);
+    if(warehouseFilters.location!==null)params.set("location",warehouseFilters.location);
+    return params;
+  }
   if (view === "movements") {
     if (movementTypeFilter !== "all") params.set("type", movementTypeFilter);
   } else {
@@ -252,7 +260,8 @@ async function loadListPage(view) {
     if (request !== page.request || key !== listParams(view).toString()) return;
     page.items = view === "products" ? result.items.map(normalizeProduct)
       : view === "inventory" ? result.items.map(row => ({ ...row, product: normalizeProduct(row.product), warehouse: warehouseById(row.warehouseId) }))
-      : result.items.map(normalizeMovement);
+      : view === "warehouses" ? result.items.map(normalizeWarehouse) : result.items.map(normalizeMovement);
+    if(view === "warehouses"){page.facets=result.facets;page.counts=result.counts;}
     Object.assign(page, result.pagination);
     page.key = listParams(view).toString();
   } catch (problem) {
@@ -263,7 +272,7 @@ async function loadListPage(view) {
       page.loading = false;
       if (currentUser && currentView === view) {
         render();
-        if(page.focusAfterLoad){const selector=page.focusAfterLoad==="size"?`#${view}-page-size`:".pagination-nav [aria-current=page]";$(selector)?.focus({preventScroll:true});page.focusAfterLoad=null;}
+        if(page.focusAfterLoad){const selector=page.focusAfterLoad==="size"?`#${view}-page-size`:page.focusAfterLoad==="movement-top"?"#movement-top-page-status":".pagination-nav [aria-current=page]";$(selector)?.focus({preventScroll:true});page.focusAfterLoad=null;}
       }
     }
   }
@@ -283,7 +292,7 @@ function paginationControls(view) {
   const candidates = [...new Set([1, p.totalPages, ...Array.from({length:5}, (_,i) => p.page + i - 2)])].filter(n => n >= 1 && n <= p.totalPages).sort((a,b) => a-b);
   const button = (page,label,extra="") => `<button class="page-button ${page === p.page ? "is-current" : ""}" type="button" data-action="go-page" data-page="${page}" ${extra} ${disabled ? "disabled" : ""}>${label}</button>`;
   const numbers = candidates.map((n,i) => `${i && n > candidates[i-1] + 1 ? '<span class="page-ellipsis" aria-hidden="true">…</span>' : ""}${button(n,number(n),`aria-label="${n}. sayfa" ${n === p.page ? 'aria-current="page"' : ""}`)}`).join("");
-  return `<div class="pagination-bar"><div class="pagination-settings"><label for="${view}-page-size">Sayfada <select id="${view}-page-size" data-page-size ${p.loading ? "disabled" : ""}>${[10,25,50,100].map(size => `<option value="${size}" ${size === p.pageSize ? "selected" : ""}>${size}</option>`).join("")}</select> kayıt</label><span class="pagination-summary" role="status" aria-live="polite">${p.loading ? "Yükleniyor…" : `${number(start)}–${number(end)} / ${number(p.total)} kayıt`}</span></div><nav class="pagination-nav" aria-label="${({products:"Ürün",inventory:"Stok",movements:"Hareket"})[view]} sayfaları">${button(p.page-1,"‹",`aria-label="Önceki sayfa" ${p.page <= 1 ? "disabled" : ""}`)}${numbers}${button(p.page+1,"›",`aria-label="Sonraki sayfa" ${p.page >= p.totalPages ? "disabled" : ""}`)}</nav></div>`;
+  return `<div class="pagination-bar"><div class="pagination-settings"><label for="${view}-page-size">Sayfada <select id="${view}-page-size" data-page-size ${p.loading ? "disabled" : ""}>${[10,25,50,100].map(size => `<option value="${size}" ${size === p.pageSize ? "selected" : ""}>${size}</option>`).join("")}</select> kayıt</label><span class="pagination-summary" role="status" aria-live="polite">${p.loading ? "Yükleniyor…" : `${number(start)}–${number(end)} / ${number(p.total)} kayıt`}</span></div><nav class="pagination-nav" aria-label="${({products:"Ürün",inventory:"Stok",movements:"Hareket",warehouses:"Depo"})[view]} sayfaları">${button(p.page-1,"‹",`aria-label="Önceki sayfa" ${p.page <= 1 ? "disabled" : ""}`)}${numbers}${button(p.page+1,"›",`aria-label="Sonraki sayfa" ${p.page >= p.totalPages ? "disabled" : ""}`)}</nav></div>`;
 }
 
 const movementPickerState={page:1,total:0,totalPages:1,loading:false,error:"",controller:null,request:0,timer:null};
@@ -380,6 +389,7 @@ async function logout() {
     return;
   }
   for(const view of Object.keys(listPages)){invalidateList(view,true);listPages[view].items=[];listPages[view].total=0;}
+  warehouseFilters.location=null;warehouseFilters.sort="name";showArchivedWarehouses=false;currentSearch="";$("#global-search").value="";listPages.warehouses.facets={locations:[]};listPages.warehouses.counts={active:0,archived:0};
   currentUser = null;
   state = { warehouses: [], products: [], movements: [] };
   closeTopbarPopovers();
@@ -513,16 +523,37 @@ function renderInventory() {
 }
 
 function renderWarehouses() {
-  const visibleWarehouses = state.warehouses.filter((warehouse) => (showArchivedWarehouses ? warehouse.archived : !warehouse.archived));
-  const cards = visibleWarehouses.map((warehouse) => {
-    const total = warehouse.count;
-    const productCount = warehouse.products;
-    const lowCount = warehouse.lowCount;
-    return `<article class="warehouse-card ${warehouse.archived ? "archived-row" : ""}"><div class="warehouse-card-top"><span class="warehouse-card-icon">${icon("warehouse")}</span><span class="warehouse-code">${esc(warehouse.code)}</span></div><h3>${esc(warehouse.name)}${warehouse.archived ? " · Arşivde" : ""}</h3><p>${esc(warehouse.address || "Adres eklenmemiş")}</p><div class="warehouse-card-stats"><span><strong>${number(total)}</strong>Toplam adet</span><span><strong>${number(productCount)}</strong>Ürün çeşidi</span><span><strong>${number(lowCount)}</strong>Kritik stok</span></div><div class="panel-foot"><i class="status-dot ${warehouse.archived ? "warn" : ""}"></i> ${warehouse.archived ? "Arşivlenmiş depo" : "Aktif depo"}<span class="warehouse-card-actions"><button class="button button-small" data-action="edit-warehouse" data-warehouse-id="${esc(warehouse.id)}">Düzenle</button><button class="button button-small" data-action="toggle-warehouse-archive" data-warehouse-id="${esc(warehouse.id)}">${warehouse.archived ? "Geri al" : "Arşivle"}</button></span></div></article>`;
-  }).join("");
-  const archivedCount = state.warehouses.filter((warehouse) => warehouse.archived).length;
-  const actions = `<button class="button button-small" data-action="toggle-archived-warehouses">${showArchivedWarehouses ? "Aktif depolar" : `Arşivdekiler (${archivedCount})`}</button><button class="button button-primary" data-action="open-warehouse">${icon("plus")} Yeni depo</button>`;
-  return `${pageHeading("LOKASYONLAR", "Depolar", "Depo konumlarını ve her birindeki ürün dağılımını görüntüle.", actions)}<div class="warehouse-card-grid">${cards || `<section class="panel empty-state"><strong>${showArchivedWarehouses ? "Arşivlenmiş depo yok" : "Henüz depo eklenmedi"}</strong>${showArchivedWarehouses ? "Arşivlenmiş depolar burada görünür." : "İlk depoyu ekleyerek envanterini düzenlemeye başlayabilirsin."}</section>`}</div>`;
+  const page = listPages.warehouses;
+  const warehouses = page.loading || page.error ? [] : page.items;
+  const locations = page.facets?.locations || [];
+  const activeFilters = Number(Boolean(currentSearch.trim())) + Number(warehouseFilters.location !== null) + Number(warehouseFilters.sort !== "name");
+  const archivedCount = page.counts?.archived ?? state.warehouses.filter(w => w.archived).length;
+  const actions = `<button class="button button-small" data-action="toggle-archived-warehouses">${showArchivedWarehouses ? "Aktif depolar" : `Arşivdekiler (${number(archivedCount)})`}</button><button class="button button-primary" data-action="open-warehouse">${icon("plus")} Yeni depo</button>`;
+  const cards = warehouses.map(warehouse => `<article class="warehouse-card ${warehouse.archived ? "archived-row" : ""}">
+    <div class="warehouse-card-top"><span class="warehouse-card-icon">${icon("warehouse")}</span><span class="warehouse-code">${esc(warehouse.code)}</span></div>
+    <h3>${esc(warehouse.name)}${warehouse.archived ? " · Arşivde" : ""}</h3>
+    ${warehouse.location ? `<span class="warehouse-location-tag">${esc(warehouse.location)}</span>` : ""}
+    <p>${esc(warehouse.address || "Adres eklenmemiş")}</p>
+    <div class="warehouse-card-stats"><span><strong>${number(warehouse.count)}</strong>Toplam adet</span><span><strong>${number(warehouse.products)}</strong>Ürün çeşidi</span><span><strong>${number(warehouse.lowCount)}</strong>Kritik stok</span></div>
+    <div class="panel-foot"><i class="status-dot ${warehouse.archived ? "warn" : ""}"></i> ${warehouse.archived ? "Arşivlenmiş depo" : "Aktif depo"}<span class="warehouse-card-actions"><button class="button button-small" data-action="edit-warehouse" data-warehouse-id="${esc(warehouse.id)}">Düzenle</button><button class="button button-small" data-action="toggle-warehouse-archive" data-warehouse-id="${esc(warehouse.id)}">${warehouse.archived ? "Geri al" : "Arşivle"}</button></span></div>
+  </article>`).join("");
+  const empty = page.loading ? '<section class="panel empty-state warehouse-list-message" role="status"><strong>Depolar yükleniyor…</strong></section>'
+    : page.error ? `<section class="panel empty-state warehouse-list-message" role="alert"><strong>Depolar yüklenemedi</strong><p>${esc(page.error)}</p><button class="button button-small" type="button" data-action="retry-list">Tekrar dene</button></section>`
+    : `<section class="panel empty-state warehouse-list-message"><strong>${activeFilters ? "Aramana uygun depo bulunamadı" : showArchivedWarehouses ? "Arşivlenmiş depo yok" : "Henüz depo eklenmedi"}</strong><p>${activeFilters ? "Aramayı veya konum filtresini değiştirerek yeniden deneyebilirsin." : showArchivedWarehouses ? "Arşivlediğin depolar burada görünür." : "İlk deponu ekleyerek stoklarını konumlara göre düzenleyebilirsin."}</p>${activeFilters ? '<button class="button button-small" type="button" data-action="clear-warehouse-filters">Aramayı ve filtreleri temizle</button>' : ""}</section>`;
+  return `${pageHeading("LOKASYONLAR", "Depolar", "Depolarını ad, kod veya adresle ara; konumlarına göre incele.", actions)}
+    <section class="panel warehouse-search-panel" aria-label="Depo arama ve filtreleri">
+      <div class="warehouse-filter-grid"><div class="warehouse-search-field"><span class="warehouse-filter-label">Depo ara</span>${pageSearchControl("warehouse-search", "Depo adı, kodu veya adres ara...")}</div>
+        <label class="warehouse-filter-field" for="warehouse-location-filter"><span>Konum</span><select id="warehouse-location-filter"><option value="all">Tüm konumlar</option>${locations.map(item => `<option value="${esc('location:' + item.value)}" ${warehouseFilters.location !== null && warehouseFilters.location.normalize("NFKC").toLocaleLowerCase("tr-TR") === item.value.normalize("NFKC").toLocaleLowerCase("tr-TR") ? "selected" : ""}>${esc(item.value || "Konum belirtilmemiş")} (${number(item.count)})</option>`).join("")}</select></label>
+        <label class="warehouse-filter-field" for="warehouse-sort"><span>Sıralama</span><select id="warehouse-sort">${[["name","Depo adına göre"],["quantity-desc","Stok: çoktan aza"],["products-desc","Ürün çeşidi: çoktan aza"],["critical-desc","Kritik stok: çoktan aza"]].map(([value,label])=>`<option value="${value}" ${warehouseFilters.sort===value?"selected":""}>${label}</option>`).join("")}</select></label>
+      </div>
+      <div class="warehouse-filter-footer"><span>${showArchivedWarehouses ? "Arşivlenmiş depolar" : "Aktif depolar"} · ${number(page.total)} / ${number(page.counts?.[showArchivedWarehouses ? "archived" : "active"] || 0)} depo</span>${activeFilters ? `<button type="button" class="subtle-link" data-action="clear-warehouse-filters">Filtreleri temizle (${activeFilters})</button>` : ""}</div>
+    </section>
+    <div class="warehouse-card-grid" aria-busy="${page.loading}">${cards || empty}</div>
+    <section class="panel warehouse-pagination" aria-label="Depo listeleme seçenekleri">${paginationControls("warehouses")}</section>`;
+}
+function movementPaginationTop() {
+  const p = listPages.movements, disabled = p.loading || Boolean(p.error);
+  return `<nav class="movement-pagination-top" aria-label="Stok hareketleri sayfa geçişleri"><span id="movement-top-page-status" class="movement-page-summary" tabindex="-1" role="status" aria-live="polite">${p.loading ? "Hareketler yükleniyor…" : `Sayfa ${number(p.page)} / ${number(p.totalPages)} · ${number(p.total)} hareket`}</span><div><button type="button" class="button button-small" data-action="go-page" data-page="${p.page-1}" aria-label="Önceki hareket sayfası" ${disabled||p.page<=1?"disabled":""}>‹ Önceki</button><button type="button" class="button button-small" data-action="go-page" data-page="${p.page+1}" aria-label="Sonraki hareket sayfası" ${disabled||p.page>=p.totalPages?"disabled":""}>Sonraki ›</button></div></nav>`;
 }
 
 function renderMovements() {
@@ -535,7 +566,8 @@ function renderMovements() {
   const types = [["all","Tüm hareketler"],["INBOUND","Stok girişleri"],["OUTBOUND","Stok çıkışları"],["ADJUSTMENT","Sayım düzeltmeleri"],["TRANSFER_IN","Transfer girişleri"],["TRANSFER_OUT","Transfer çıkışları"]];
   const actions = `<button class="button" data-action="export-csv">${icon("download")} CSV indir</button><button class="button button-primary" data-action="open-movement">${icon("plus")} Hareket ekle</button>`;
   return `${pageHeading("İŞLEM GEÇMİŞİ","Stok hareketleri","Stok girişlerini, çıkışlarını ve transferlerini takip et.",actions)}
-    <div class="page-toolbar"><div class="page-toolbar-left">${pageSearchControl("movement-search","Ürün, depo veya not ara...")}<label class="visually-hidden" for="movement-filter">İşlem türü</label><select class="filter-control" id="movement-filter">${types.map(([value,label])=>`<option value="${value}" ${movementTypeFilter === value ? "selected" : ""}>${label}</option>`).join("")}</select></div><span class="table-count">${number(page.total)} hareket</span></div>
+    <div class="page-toolbar movement-toolbar"><div class="page-toolbar-left">${pageSearchControl("movement-search","Ürün, depo veya not ara...")}<label class="visually-hidden" for="movement-filter">İşlem türü</label><select class="filter-control" id="movement-filter">${types.map(([value,label])=>`<option value="${value}" ${movementTypeFilter === value ? "selected" : ""}>${label}</option>`).join("")}</select></div><span class="table-count">${number(page.total)} hareket</span></div>
+    ${movementPaginationTop()}
     <section class="panel table-panel" aria-busy="${page.loading}"><div class="table-scroll"><table class="data-table"><thead><tr><th>TARİH</th><th>ÜRÜN</th><th>İŞLEM</th><th>DEPO</th><th>MİKTAR</th><th>AÇIKLAMA</th></tr></thead><tbody>${tableNotice("movements",6) || rows || '<tr><td colspan="6"><div class="empty-state"><strong>Hareket bulunamadı</strong>Aramayı veya işlem türünü değiştirerek yeniden deneyebilirsin.</div></td></tr>'}</tbody></table></div>${paginationControls("movements")}</section>`;
 }
 
@@ -543,7 +575,7 @@ function render() {
   const views = {overview:["Genel bakış",renderOverview],inventory:["Stok durumu",renderInventory],products:["Ürünler",renderProducts],warehouses:["Depolar",renderWarehouses],movements:["Hareketler",renderMovements]};
   if (!views[currentView]) currentView="overview";
   const focused=document.activeElement;
-  const preserve=focused?.matches?.("#product-search, #inventory-search, #movement-search, [data-page-size]") ? {id:focused.id,start:focused.selectionStart,end:focused.selectionEnd} : null;
+  const preserve=focused?.matches?.("#product-search, #inventory-search, #movement-search, #warehouse-search, #warehouse-location-filter, #warehouse-sort, [data-page-size]") ? {id:focused.id,start:focused.selectionStart,end:focused.selectionEnd} : null;
   ensureListPage(currentView);
   $$(".nav-link").forEach(link=>link.classList.toggle("active",link.dataset.view===currentView));
   $("#breadcrumb-current").textContent=views[currentView][0];
@@ -641,7 +673,7 @@ async function openModal(kind, presets = {}) {
   if (kind === "product") {
     root.innerHTML = `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header class="modal-head"><div><h2 id="modal-title">Yeni ürün ekle</h2><p>Ürün kataloğuna yeni bir kayıt oluştur.</p></div><button class="modal-close" data-action="close-modal" aria-label="Kapat">${icon("close")}</button></header><form class="modal-form" id="product-form"><div class="form-grid"><div class="form-field"><label for="product-sku">SKU / Ürün kodu</label><input id="product-sku" name="sku" maxlength="40" placeholder="Örn. KBL-1042" required></div><div class="form-field"><label for="product-name">Ürün adı</label><input id="product-name" name="name" maxlength="100" placeholder="Ürün adını yaz" required></div><div class="form-field"><label for="product-category">Kategori</label><input id="product-category" name="category" maxlength="50" placeholder="Örn. Elektronik" value="Genel"></div><div class="form-field"><label for="product-unit">Birim</label><select id="product-unit" name="unit"><option>adet</option><option>kutu</option><option>paket</option><option>rulo</option><option>kg</option><option>litre</option></select></div><div class="form-field"><label for="product-minimum">Minimum stok</label><input id="product-minimum" name="minimum" type="number" min="0" step="1" value="5" required></div><div class="form-field"><label for="product-cost">Birim maliyet (₺)</label><input id="product-cost" name="cost" type="number" min="0" step="1" value="0"></div></div><div class="form-error" id="form-error"></div><div class="modal-actions"><button type="button" class="button" data-action="close-modal">Vazgeç</button><button class="button button-primary" type="submit">Ürünü kaydet</button></div></form></section></div>`;
   } else if (kind === "warehouse") {
-    root.innerHTML = `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header class="modal-head"><div><h2 id="modal-title">Yeni depo ekle</h2><p>Stoklarını takip edeceğin bir konum oluştur.</p></div><button class="modal-close" data-action="close-modal" aria-label="Kapat">${icon("close")}</button></header><form class="modal-form" id="warehouse-form"><div class="form-grid"><div class="form-field"><label for="warehouse-code">Depo kodu</label><input id="warehouse-code" name="code" maxlength="20" placeholder="Örn. IST-01" required></div><div class="form-field"><label for="warehouse-name">Depo adı</label><input id="warehouse-name" name="name" maxlength="80" placeholder="Örn. İstanbul Deposu" required></div><div class="form-field full"><label for="warehouse-address">Adres</label><input id="warehouse-address" name="address" maxlength="150" placeholder="İlçe, şehir"></div></div><div class="form-error" id="form-error"></div><div class="modal-actions"><button type="button" class="button" data-action="close-modal">Vazgeç</button><button class="button button-primary" type="submit">Depoyu kaydet</button></div></form></section></div>`;
+    root.innerHTML = `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header class="modal-head"><div><h2 id="modal-title">Yeni depo ekle</h2><p>Stoklarını takip edeceğin bir konum oluştur.</p></div><button class="modal-close" data-action="close-modal" aria-label="Kapat">${icon("close")}</button></header><form class="modal-form" id="warehouse-form"><div class="form-grid"><div class="form-field"><label for="warehouse-code">Depo kodu</label><input id="warehouse-code" name="code" maxlength="20" placeholder="Örn. IST-01" required></div><div class="form-field"><label for="warehouse-name">Depo adı</label><input id="warehouse-name" name="name" maxlength="80" placeholder="Örn. İstanbul Deposu" required></div><div class="form-field full"><label for="warehouse-location">Konum (şehir / ilçe)</label><input id="warehouse-location" name="location" maxlength="160" placeholder="Örn. İstanbul / Esenyurt"><span class="field-hint">Depolarını bu konuma göre filtreleyebilirsin.</span></div><div class="form-field full"><label for="warehouse-address">Adres</label><input id="warehouse-address" name="address" maxlength="500" placeholder="İlçe, şehir"></div></div><div class="form-error" id="form-error"></div><div class="modal-actions"><button type="button" class="button" data-action="close-modal">Vazgeç</button><button class="button button-primary" type="submit">Depoyu kaydet</button></div></form></section></div>`;
   } else if (kind === "movement") {
     if (!selectedForMovement || !activeWarehouses().length) {
       showToast("Önce en az bir ürün ve depo ekle.");
@@ -669,7 +701,7 @@ function openProductEditor(productId) {
 function openWarehouseEditor(warehouseId) {
   const warehouse = warehouseById(warehouseId);
   if (!warehouse) return;
-  $("#modal-root").innerHTML = `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header class="modal-head"><div><h2 id="modal-title">Depoyu düzenle</h2><p>Depo konum bilgilerini güncelle.</p></div><button class="modal-close" data-action="close-modal" aria-label="Kapat">${icon("close")}</button></header><form class="modal-form" id="warehouse-form" data-warehouse-id="${esc(warehouse.id)}"><div class="form-grid"><div class="form-field"><label for="warehouse-code">Depo kodu</label><input id="warehouse-code" name="code" maxlength="20" value="${esc(warehouse.code)}" required></div><div class="form-field"><label for="warehouse-name">Depo adı</label><input id="warehouse-name" name="name" maxlength="80" value="${esc(warehouse.name)}" required></div><div class="form-field full"><label for="warehouse-address">Adres</label><input id="warehouse-address" name="address" maxlength="150" value="${esc(warehouse.address || "")}"></div></div><div class="form-error" id="form-error"></div><div class="modal-actions"><button type="button" class="button" data-action="close-modal">Vazgeç</button><button class="button button-primary" type="submit">Değişiklikleri kaydet</button></div></form></section></div>`;
+  $("#modal-root").innerHTML = `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header class="modal-head"><div><h2 id="modal-title">Depoyu düzenle</h2><p>Depo konum bilgilerini güncelle.</p></div><button class="modal-close" data-action="close-modal" aria-label="Kapat">${icon("close")}</button></header><form class="modal-form" id="warehouse-form" data-warehouse-id="${esc(warehouse.id)}"><div class="form-grid"><div class="form-field"><label for="warehouse-code">Depo kodu</label><input id="warehouse-code" name="code" maxlength="20" value="${esc(warehouse.code)}" required></div><div class="form-field"><label for="warehouse-name">Depo adı</label><input id="warehouse-name" name="name" maxlength="80" value="${esc(warehouse.name)}" required></div><div class="form-field full"><label for="warehouse-location">Konum (şehir / ilçe)</label><input id="warehouse-location" name="location" maxlength="160" placeholder="Örn. İstanbul / Esenyurt" value="${esc(warehouse.location || "")}"><span class="field-hint">Konum boşsa filtrelerde mevcut adres kullanılır.</span></div><div class="form-field full"><label for="warehouse-address">Adres</label><input id="warehouse-address" name="address" maxlength="500" value="${esc(warehouse.address || "")}"></div></div><div class="form-error" id="form-error"></div><div class="modal-actions"><button type="button" class="button" data-action="close-modal">Vazgeç</button><button class="button button-primary" type="submit">Değişiklikleri kaydet</button></div></form></section></div>`;
   beginModal();
   $("#warehouse-code").focus();
 }
@@ -731,7 +763,7 @@ async function saveWarehouse(form) {
   const data = new FormData(form);
   const code = String(data.get("code")).trim().toLocaleUpperCase("tr-TR");
   const warehouseId = form.dataset.warehouseId;
-  const fields = { code, name: String(data.get("name")).trim(), address: String(data.get("address") || "").trim() };
+  const fields = { code, location:String(data.get("location")||"").trim()||null, name: String(data.get("name")).trim(), address: String(data.get("address") || "").trim() };
   await api(warehouseId ? `/warehouses/${encodeURIComponent(warehouseId)}` : "/warehouses", {
     method: warehouseId ? "PATCH" : "POST", body: JSON.stringify(fields),
   });
@@ -874,13 +906,14 @@ document.addEventListener("click", (event) => {
   const actionElement = event.target.closest("[data-action]");
   if (!actionElement) return;
   const { action } = actionElement.dataset;
-  if(action==="go-page"){const p=listPages[currentView];const target=Number(actionElement.dataset.page);if(p&&!p.loading&&Number.isInteger(target)&&target>=1&&target<=p.totalPages){p.page=target;p.focusAfterLoad="page";reloadList({reset:false});}return;}
+  if(action==="go-page"){const p=listPages[currentView];const target=Number(actionElement.dataset.page);if(p&&!p.loading&&Number.isInteger(target)&&target>=1&&target<=p.totalPages){p.page=target;p.focusAfterLoad=actionElement.closest(".movement-pagination-top")?"movement-top":"page";reloadList({reset:false});}return;}
+  if(action==="clear-warehouse-filters"){warehouseFilters.location=null;warehouseFilters.sort="name";currentSearch="";$("#global-search").value="";reloadList();$("#warehouse-search")?.focus();return;}
   if(action==="retry-list"){reloadList({reset:false});return;}
   if(action==="picker-page"){void loadMovementProducts($("#movement-product-search").value,Number(actionElement.dataset.page));return;}
   if (action === "clear-page-search") {
     currentSearch = "";
     $("#global-search").value = "";
-    const searchId = currentView === "products" ? "#product-search" : currentView === "inventory" ? "#inventory-search" : "#movement-search";
+    const searchId = currentView === "products" ? "#product-search" : currentView === "inventory" ? "#inventory-search" : currentView === "warehouses" ? "#warehouse-search" : "#movement-search";
     reloadList();
     $(searchId)?.focus();
     return;
@@ -916,7 +949,7 @@ document.addEventListener("click", (event) => {
     else confirmArchive("warehouse", actionElement.dataset.warehouseId);
   }
   if (action === "toggle-archived-products") { showArchivedProducts = !showArchivedProducts; currentSearch = ""; $("#global-search").value=""; reloadList(); }
-  if (action === "toggle-archived-warehouses") { showArchivedWarehouses = !showArchivedWarehouses; render(); }
+  if (action === "toggle-archived-warehouses") { showArchivedWarehouses = !showArchivedWarehouses; currentSearch="";$("#global-search").value="";reloadList(); }
   if (action === "open-movement") launchModal("movement", { productId: actionElement.dataset.productId, warehouseId: actionElement.dataset.warehouseId });
   if (action === "export-csv") exportCsv();
   if (action === "show-help") showHelp();
@@ -937,6 +970,8 @@ document.addEventListener("submit", (event) => {
 });
 
 document.addEventListener("change", (event) => {
+  if(event.target.matches("#warehouse-location-filter")){warehouseFilters.location=event.target.value==="all"?null:event.target.value.slice("location:".length);reloadList();return;}
+  if(event.target.matches("#warehouse-sort")){warehouseFilters.sort=event.target.value;reloadList();return;}
   if(event.target.matches("[data-page-size]")){listPages[currentView].pageSize=Number(event.target.value);listPages[currentView].focusAfterLoad="size";reloadList();return;}
   if (event.target.matches("#movement-type, #movement-product")) updateMovementFields();
   if (event.target.matches("#warehouse-filter")) { stockFilters[currentView].warehouse = event.target.value; reloadList(); }
@@ -946,9 +981,9 @@ document.addEventListener("change", (event) => {
 
 document.addEventListener("input", (event) => {
   if(event.target.matches("#movement-product-search")){scheduleMovementProductSearch(event.target.value);return;}
-  if(event.target.matches("#global-search, #product-search, #inventory-search, #movement-search")){
+  if(event.target.matches("#global-search, #product-search, #inventory-search, #movement-search, #warehouse-search")){
     currentSearch=event.target.value;$("#global-search").value=currentSearch;
-    if(["overview","warehouses"].includes(currentView)){currentView="products";location.hash="products";$("#sidebar").classList.remove("open");}
+    if(currentView === "overview"){currentView="products";location.hash="products";$("#sidebar").classList.remove("open");}
     reloadList({delay:250});
   }
 });
@@ -963,7 +998,7 @@ document.addEventListener("keydown", (event) => {
   }
   if (modalContext && event.key === "Tab") {
     const modal = $("#modal-root .modal");
-    const focusable = $("button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex='0']", modal).filter((element) => !element.closest("[hidden]") && element.getClientRects().length);
+    const focusable = $$("button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex='0']", modal).filter((element) => !element.closest("[hidden]") && element.getClientRects().length);
     const first = focusable[0], last = focusable.at(-1);
     if (!first) { event.preventDefault(); return; }
     if (event.shiftKey && (document.activeElement === first || !focusable.includes(document.activeElement))) { event.preventDefault(); last.focus(); }

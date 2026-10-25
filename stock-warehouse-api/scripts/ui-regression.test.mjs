@@ -50,3 +50,25 @@ test('modal background lock and scroll restoration still work',()=>{
  const env=environment();env.run('beginModal()');assert.equal(env.document.body.style.position,'fixed');assert.equal(env.elements.get('#app-shell').inert,true);
  env.run('closeModal()');assert.equal(env.elements.get('#app-shell').inert,false);assert.equal(env.window.lastScroll.top,350);
 });
+
+test('warehouse search remains on the warehouse view and resets the current page',()=>{
+ const env=environment();env.run('currentView="warehouses";listPages.warehouses.page=4;warehouseFilters.location="";warehouseFilters.sort="quantity-desc"');
+ env.listeners.input({target:{value:'İstanbul',matches:selector=>selector.includes('#warehouse-search')}});
+ assert.equal(env.run('currentView'),'warehouses');assert.equal(env.run('listPages.warehouses.page'),1);
+ const params=new URLSearchParams(env.run('listParams("warehouses").toString()'));assert.equal(params.get('q'),'İstanbul');assert.equal(params.get('location'),'');assert.equal(params.get('sort'),'quantity-desc');
+ env.run('clearTimeout(listPages.warehouses.timer)');
+});
+test('warehouse pages load location facets and render empty-state recovery controls',async()=>{
+ const env=environment(()=>({items:[],pagination:{page:1,pageSize:25,total:0,totalPages:1},facets:{locations:[{value:'İstanbul',count:4},{value:'',count:2}]},counts:{active:6,archived:1}}));
+ env.run('currentView="warehouses";currentSearch="missing"');await env.run('loadListPage("warehouses")');
+ const html=env.run('renderWarehouses()');assert.match(html,/Aramana uygun depo bulunamadı/);assert.match(html,/Konum belirtilmemiş/);assert.match(html,/location:İstanbul/);assert.match(html,/clear-warehouse-filters/);assert.match(html,/warehouses-page-size/);
+});
+test('movement pagination is available above and below the table',()=>{
+ const env=environment();env.run('Object.assign(listPages.movements,{page:2,pageSize:25,total:49,totalPages:2})');
+ const html=env.run('renderMovements()');assert.match(html,/movement-pagination-top/);assert.match(html,/Sayfa 2 \/ 2 · 49 hareket/);assert.match(html,/Sonraki hareket sayfası/);assert.match(html,/movements-page-size/);assert.match(html,/Hareket sayfaları/);
+});
+
+test('warehouse location selection remains visible when facet letter casing changes',()=>{
+ const env=environment();env.run('warehouseFilters.location="İSTANBUL";listPages.warehouses.facets={locations:[{value:"İstanbul",count:1}]};listPages.warehouses.counts={active:1,archived:0}');
+ assert.match(env.run('renderWarehouses()'),/value="location:İstanbul" selected/);
+});

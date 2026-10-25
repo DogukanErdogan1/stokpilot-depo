@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { db } from "./db.js";
-import { enrichProducts, exportRows, listInventory, listMovements, listProducts, overview } from "./listing-service.js";
+import { enrichProducts, exportRows, listInventory, listMovements, listProducts, listWarehouses, overview } from "./listing-service.js";
 import { AppError } from "./errors.js";
 import { adjustInventory, createStockMovement, transferStock } from "./inventory-service.js";
 import {
@@ -10,6 +10,7 @@ import {
   createMovementSchema,
   createProductSchema,
   createWarehouseSchema,
+  warehouseListQuerySchema,
   idParamsSchema,
   inventoryQuerySchema,
   movementListQuerySchema,
@@ -142,19 +143,16 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     return reply.code(204).send();
   });
 
-  app.get("/api/warehouses", async (request) => db.prepare(`
-    SELECT id, code, name, address, archived, created_at AS createdAt
-    FROM warehouses WHERE workspace_id = ? ORDER BY name COLLATE NOCASE
-  `).all(getWorkspaceId(request)));
+  app.get("/api/warehouses", async request => listWarehouses(getWorkspaceId(request), parse(warehouseListQuerySchema, request.query)));
 
   app.post("/api/warehouses", async (request, reply) => {
     const workspaceId = getWorkspaceId(request);
     const input = parse(createWarehouseSchema, request.body);
     const id = randomUUID();
-    db.prepare("INSERT INTO warehouses (id, workspace_id, code, name, address) VALUES (?, ?, ?, ?, ?)")
-      .run(id, workspaceId, input.code, input.name, input.address ?? null);
+    db.prepare("INSERT INTO warehouses (id, workspace_id, code, name, address, location) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(id, workspaceId, input.code, input.name, input.address ?? null, input.location ?? null);
     const warehouse = db.prepare(`
-      SELECT id, code, name, address, archived, created_at AS createdAt FROM warehouses WHERE id = ? AND workspace_id = ?
+      SELECT id, code, name, address, location, archived, created_at AS createdAt FROM warehouses WHERE id = ? AND workspace_id = ?
     `).get(id, workspaceId);
     return reply.code(201).send(warehouse);
   });
@@ -163,8 +161,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const workspaceId = getWorkspaceId(request);
     const { id } = parse(idParamsSchema, request.params);
     const input = parse(updateWarehouseSchema, request.body);
-    const existing = db.prepare("SELECT code, name, address, archived FROM warehouses WHERE id = ? AND workspace_id = ?").get(id, workspaceId) as {
-      code: string; name: string; address: string | null; archived: number;
+    const existing = db.prepare("SELECT code, name, address, location, archived FROM warehouses WHERE id = ? AND workspace_id = ?").get(id, workspaceId) as {
+      code: string; name: string; address: string | null; location: string | null; archived: number;
     } | undefined;
     if (!existing) throw new AppError(404, "WAREHOUSE_NOT_FOUND", "Depo bulunamadı.");
 
@@ -175,10 +173,11 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       if (stock.quantity > 0) throw new AppError(409, "WAREHOUSE_HAS_STOCK", "Arşivlemeden önce bu depodaki stokları sıfırlayın.");
     }
 
-    db.prepare("UPDATE warehouses SET code = ?, name = ?, address = ?, archived = ? WHERE id = ? AND workspace_id = ?")
+    db.prepare("UPDATE warehouses SET code = ?, name = ?, address = ?, location = ?, archived = ? WHERE id = ? AND workspace_id = ?")
       .run(input.code ?? existing.code, input.name ?? existing.name,
-        input.address === undefined ? existing.address : input.address, nextArchived ? 1 : 0, id, workspaceId);
-    return db.prepare(`SELECT id, code, name, address, archived, created_at AS createdAt FROM warehouses WHERE id = ? AND workspace_id = ?`)
+        input.address === undefined ? existing.address : input.address,
+        input.location === undefined ? existing.location : input.location, nextArchived ? 1 : 0, id, workspaceId);
+    return db.prepare(`SELECT id, code, name, address, location, archived, created_at AS createdAt FROM warehouses WHERE id = ? AND workspace_id = ?`)
       .get(id, workspaceId);
   });
 

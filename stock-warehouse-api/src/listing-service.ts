@@ -1,7 +1,7 @@
 import { Readable } from "node:stream";
 import type { z } from "zod";
 import { db } from "./db.js";
-import { stockListQuerySchema, movementListQuerySchema } from "./validation.js";
+import { stockListQuerySchema, movementListQuerySchema, warehouseListQuerySchema } from "./validation.js";
 
 type StockQuery = z.infer<typeof stockListQuerySchema>;
 type MovementQuery = z.infer<typeof movementListQuerySchema>;
@@ -107,6 +107,43 @@ export function listMovements(workspaceId: string, query: MovementQuery) {
     p.id AS productId, p.name AS productName, p.sku, p.unit, p.symbol,
     w.id AS warehouseId, w.name AS warehouseName, w.code AS warehouseCode`, query.page, query.pageSize);
 }
+export function listWarehouses(workspaceId: string, query: z.infer<typeof warehouseListQuerySchema>) {
+  const location = "COALESCE(NULLIF(TRIM(w.location), ''), NULLIF(TRIM(w.address), ''), '')";
+  const conditions = ["w.workspace_id = ?", "w.archived = ?"];
+  const values: Array<string | number> = [workspaceId, workspaceId, workspaceId, query.archived ? 1 : 0];
+  if (query.q) {
+    conditions.push("(search_text(w.name) LIKE ? ESCAPE '\\' OR search_text(w.code) LIKE ? ESCAPE '\\' OR search_text(COALESCE(w.address, '')) LIKE ? ESCAPE '\\' OR search_text(COALESCE(w.location, '')) LIKE ? ESCAPE '\\')");
+    const pattern = searchPattern(query.q); values.push(pattern, pattern, pattern, pattern);
+  }
+  if (query.location !== undefined) {
+    conditions.push(`search_text(${location}) = search_text(?)`); values.push(query.location);
+  }
+  const orders = { name: "w.name COLLATE NOCASE", "quantity-desc": "COALESCE(b.quantity, 0) DESC",
+    "products-desc": "COALESCE(b.productCount, 0) DESC", "critical-desc": "c.productCount - COALESCE(b.healthyCount, 0) DESC" };
+  const sql: SqlQuery = {
+    prefix: `WITH balances AS (
+      SELECT ib.warehouse_id, SUM(ib.quantity) AS quantity,
+        SUM(CASE WHEN ib.quantity > 0 THEN 1 ELSE 0 END) AS productCount,
+        SUM(CASE WHEN ib.quantity > p.minimum_stock_quantity THEN 1 ELSE 0 END) AS healthyCount
+      FROM inventory_balances ib JOIN products p ON p.id = ib.product_id AND p.workspace_id = ib.workspace_id AND p.archived = 0
+      WHERE ib.workspace_id = ? GROUP BY ib.warehouse_id
+    ), catalog AS (SELECT COUNT(*) AS productCount FROM products WHERE workspace_id = ? AND archived = 0)`,
+    from: "warehouses w LEFT JOIN balances b ON b.warehouse_id = w.id CROSS JOIN catalog c",
+    where: `WHERE ${conditions.join(" AND ")}`, order: `${orders[query.sort]}, w.name COLLATE NOCASE, w.id`, values,
+  };
+  return db.transaction(() => {
+    const result = pageRows(sql, `w.id, w.code, w.name, w.address, w.location, w.archived, w.created_at AS createdAt,
+      ${location} AS locationLabel, COALESCE(b.quantity, 0) AS count, COALESCE(b.productCount, 0) AS products,
+      c.productCount - COALESCE(b.healthyCount, 0) AS lowCount`, query.page, query.pageSize);
+    const locations = db.prepare(`SELECT MIN(${location}) AS value, SUM(w.archived = ?) AS count
+      FROM warehouses w WHERE w.workspace_id = ? GROUP BY search_text(${location}) ORDER BY search_text(${location})`)
+      .all(query.archived ? 1 : 0, workspaceId);
+    const counts = db.prepare(`SELECT COALESCE(SUM(archived = 0), 0) AS active, COALESCE(SUM(archived = 1), 0) AS archived
+      FROM warehouses WHERE workspace_id = ?`).get(workspaceId);
+    return { ...result, facets: { locations }, counts };
+  })();
+}
+
 export function overview(workspaceId: string) {
   return db.transaction(() => {
     const metrics = db.prepare(`${totalPrefix} SELECT COUNT(*) AS productCount,
@@ -117,7 +154,7 @@ export function overview(workspaceId: string) {
       FROM products p LEFT JOIN totals t ON t.product_id = p.id WHERE p.workspace_id = ? AND p.archived = 0`)
       .get(workspaceId, workspaceId) as Row;
     metrics.archivedProductCount = (db.prepare("SELECT COUNT(*) AS total FROM products WHERE workspace_id = ? AND archived = 1").get(workspaceId) as Row).total;
-    const warehouses = db.prepare(`SELECT w.id, w.code, w.name, w.address, w.archived,
+    const warehouses = db.prepare(`SELECT w.id, w.code, w.name, w.address, w.location, w.archived,
       COALESCE(SUM(CASE WHEN p.archived = 0 THEN ib.quantity ELSE 0 END), 0) AS count,
       SUM(CASE WHEN p.archived = 0 AND ib.quantity > 0 THEN 1 ELSE 0 END) AS products,
       ? - SUM(CASE WHEN p.archived = 0 AND ib.quantity > p.minimum_stock_quantity THEN 1 ELSE 0 END) AS lowCount
