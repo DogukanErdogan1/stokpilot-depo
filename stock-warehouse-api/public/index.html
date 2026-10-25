@@ -6,8 +6,8 @@
     <meta name="theme-color" content="#f5f6f2" />
     <meta name="description" content="Ürün ve depo stoklarını tek bir ekrandan takip edin." />
     <title>StokPilot — Stok ve Depo Yönetimi</title>
-    <link rel="stylesheet" href="./styles.css?v=20261025-searchable-picker-2" />
-    <link rel="stylesheet" href="./auth.css?v=20261020-help-responsive-2" />
+    <link rel="stylesheet" href="./styles.css?v=20261025-pagination-1" />
+    <link rel="stylesheet" href="./auth.css?v=20261025-searchable-picker-1" />
   </head>
   <body>
     <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -53,8 +53,9 @@
             <div class="auth-field"><label for="auth-password">Şifre</label><input id="auth-password" name="password" type="password" autocomplete="current-password" required></div>
             <div class="auth-error" id="login-error" role="alert" hidden></div>
             <button class="auth-submit" type="submit">Giriş yap <svg><use href="#i-chevron"/></svg></button>
+            <button id="demo-login-button" class="auth-demo" type="button">Demo hesapla giriş yap <svg><use href="#i-chevron"/></svg></button>
           </form>
-          <p class="auth-note">Hesap bilgilerini yöneticinden al. Oturum güvenli çerezle korunur.</p>
+          <p class="auth-note">Demo hesabı örnek verileri paylaşır; yaptığın değişiklikler diğer demo ziyaretçilerine de görünür.</p>
         </div>
         <span class="auth-side-footer">© 2026 StokPilot · Stok yönetimi</span>
       </div>
@@ -106,6 +107,6 @@
     </div>
     <div id="modal-root"></div>
     <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
-    <script src="./app.js?v=20261025-searchable-picker-2" defer></script>
+    <script src="./app.js?v=20261025-pagination-1" defer></script>
   </body>
 </html>

@@ -46,9 +46,32 @@ export const updateProductSchema = z.object({
   message: "En az bir alan göndermelisiniz.",
 });
 
-export const productListQuerySchema = z.object({
+const optionalNumber = z.coerce.number().finite().nonnegative().optional();
+const paginationShape = {
+  page: z.coerce.number().int().min(1).max(1000000).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+};
+export const stockListQuerySchema = z.object({
+  ...paginationShape,
   q: z.string().trim().max(160).optional(),
+  productId: z.string().uuid().optional(), warehouseId: z.string().uuid().optional(),
+  archived: z.enum(["true", "false"]).default("false").transform(v => v === "true"),
+  lowStockOnly: z.enum(["true", "false"]).default("false").transform(v => v === "true"),
+  category: z.string().trim().max(80).optional(),
+  status: z.enum(["all", "low", "empty", "ok"]).default("all"),
+  sort: z.enum(["name", "quantity-desc", "quantity-asc", "cost-desc", "cost-asc", "warehouses-desc"]).default("name"),
+  scope: z.enum(["warehouse", "total"]).default("warehouse"),
+  minCost: optionalNumber, maxCost: optionalNumber,
+  minQuantity: optionalNumber, maxQuantity: optionalNumber,
+  minWarehouses: z.coerce.number().int().nonnegative().optional(),
+  maxWarehouses: z.coerce.number().int().nonnegative().optional(),
+}).superRefine((query, context) => {
+  for (const key of ["Cost", "Quantity", "Warehouses"] as const) {
+    const min = query[`min${key}`], max = query[`max${key}`];
+    if (min !== undefined && max !== undefined && min > max) context.addIssue({code: z.ZodIssueCode.custom, path:[`min${key}`], message:"Alt sınır üst sınırdan büyük olamaz."});
+  }
 });
+export const productListQuerySchema = stockListQuerySchema;
 
 export const createWarehouseSchema = z.object({
   code: z.string().trim().min(1).max(32),
@@ -88,16 +111,11 @@ export const transferSchema = z.object({
   note: optionalText(500),
 });
 
-export const inventoryQuerySchema = z.object({
-  productId: z.string().uuid().optional(),
-  warehouseId: z.string().uuid().optional(),
-  lowStockOnly: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
-});
-
+export const inventoryQuerySchema = stockListQuerySchema;
 export const movementListQuerySchema = z.object({
-  productId: z.string().uuid().optional(),
-  warehouseId: z.string().uuid().optional(),
+  ...paginationShape,
+  q: z.string().trim().max(160).optional(),
+  productId: z.string().uuid().optional(), warehouseId: z.string().uuid().optional(),
   type: z.enum(["INBOUND", "OUTBOUND", "ADJUSTMENT", "TRANSFER_IN", "TRANSFER_OUT"]).optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
-  offset: z.coerce.number().int().nonnegative().default(0),
 });
+export const exportQuerySchema = z.object({view:z.enum(["products", "inventory", "movements"]).default("inventory")});

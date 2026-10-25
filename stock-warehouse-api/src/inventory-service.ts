@@ -13,22 +13,24 @@ type StockChange = {
   referenceId?: string | null;
 };
 
-function ensureProductAndWarehouse(productId: string, warehouseId: string): void {
-  const product = db.prepare("SELECT id, archived FROM products WHERE id = ?").get(productId) as { id: string; archived: number } | undefined;
+function ensureProductAndWarehouse(workspaceId: string, productId: string, warehouseId: string): void {
+  const product = db.prepare("SELECT id, archived FROM products WHERE workspace_id = ? AND id = ?")
+    .get(workspaceId, productId) as { id: string; archived: number } | undefined;
   if (!product) throw new AppError(404, "PRODUCT_NOT_FOUND", "Ürün bulunamadı.");
   if (product.archived) throw new AppError(409, "PRODUCT_ARCHIVED", "Arşivlenmiş üründe stok işlemi yapılamaz.");
 
-  const warehouse = db.prepare("SELECT id, archived FROM warehouses WHERE id = ?").get(warehouseId) as { id: string; archived: number } | undefined;
+  const warehouse = db.prepare("SELECT id, archived FROM warehouses WHERE workspace_id = ? AND id = ?")
+    .get(workspaceId, warehouseId) as { id: string; archived: number } | undefined;
   if (!warehouse) throw new AppError(404, "WAREHOUSE_NOT_FOUND", "Depo bulunamadı.");
   if (warehouse.archived) throw new AppError(409, "WAREHOUSE_ARCHIVED", "Arşivlenmiş depoda stok işlemi yapılamaz.");
 }
 
-function applyStockChange(change: StockChange): { movementId: string; balance: number } {
-  ensureProductAndWarehouse(change.productId, change.warehouseId);
+function applyStockChange(workspaceId: string, change: StockChange): { movementId: string; balance: number } {
+  ensureProductAndWarehouse(workspaceId, change.productId, change.warehouseId);
 
   const current = db.prepare(`
-    SELECT quantity FROM inventory_balances WHERE product_id = ? AND warehouse_id = ?
-  `).get(change.productId, change.warehouseId) as { quantity: number } | undefined;
+    SELECT quantity FROM inventory_balances WHERE workspace_id = ? AND product_id = ? AND warehouse_id = ?
+  `).get(workspaceId, change.productId, change.warehouseId) as { quantity: number } | undefined;
 
   const nextQuantity = (current?.quantity ?? 0) + change.quantityDelta;
   if (nextQuantity < 0) {
@@ -36,19 +38,20 @@ function applyStockChange(change: StockChange): { movementId: string; balance: n
   }
 
   db.prepare(`
-    INSERT INTO inventory_balances (product_id, warehouse_id, quantity)
-    VALUES (?, ?, ?)
+    INSERT INTO inventory_balances (workspace_id, product_id, warehouse_id, quantity)
+    VALUES (?, ?, ?, ?)
     ON CONFLICT(product_id, warehouse_id) DO UPDATE SET
       quantity = excluded.quantity,
       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-  `).run(change.productId, change.warehouseId, nextQuantity);
+  `).run(workspaceId, change.productId, change.warehouseId, nextQuantity);
 
   const movementId = randomUUID();
   db.prepare(`
-    INSERT INTO stock_movements (id, product_id, warehouse_id, type, quantity_delta, reference_id, note)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO stock_movements (id, workspace_id, product_id, warehouse_id, type, quantity_delta, reference_id, note)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     movementId,
+    workspaceId,
     change.productId,
     change.warehouseId,
     change.type,
@@ -60,7 +63,7 @@ function applyStockChange(change: StockChange): { movementId: string; balance: n
   return { movementId, balance: nextQuantity };
 }
 
-export function createStockMovement(input: {
+export function createStockMovement(workspaceId: string, input: {
   productId: string;
   warehouseId: string;
   type: "INBOUND" | "OUTBOUND";
@@ -68,31 +71,31 @@ export function createStockMovement(input: {
   note?: string | null;
 }) {
   const quantityDelta = input.type === "INBOUND" ? input.quantity : -input.quantity;
-  const transaction = db.transaction(() => applyStockChange({
+  const transaction = db.transaction(() => applyStockChange(workspaceId, {
     ...input,
     quantityDelta,
   }));
   return transaction.immediate();
 }
 
-export function adjustInventory(input: {
+export function adjustInventory(workspaceId: string, input: {
   productId: string;
   warehouseId: string;
   countedQuantity: number;
   note?: string | null;
 }) {
   const transaction = db.transaction(() => {
-    ensureProductAndWarehouse(input.productId, input.warehouseId);
+    ensureProductAndWarehouse(workspaceId, input.productId, input.warehouseId);
     const current = db.prepare(`
-      SELECT quantity FROM inventory_balances WHERE product_id = ? AND warehouse_id = ?
-    `).get(input.productId, input.warehouseId) as { quantity: number } | undefined;
+      SELECT quantity FROM inventory_balances WHERE workspace_id = ? AND product_id = ? AND warehouse_id = ?
+    `).get(workspaceId, input.productId, input.warehouseId) as { quantity: number } | undefined;
     const quantityDelta = input.countedQuantity - (current?.quantity ?? 0);
 
     if (quantityDelta === 0) {
       throw new AppError(409, "NO_ADJUSTMENT_REQUIRED", "Sayım miktarı mevcut stokla aynı.");
     }
 
-    return applyStockChange({
+    return applyStockChange(workspaceId, {
       productId: input.productId,
       warehouseId: input.warehouseId,
       quantityDelta,
@@ -103,7 +106,7 @@ export function adjustInventory(input: {
   return transaction.immediate();
 }
 
-export function transferStock(input: {
+export function transferStock(workspaceId: string, input: {
   productId: string;
   sourceWarehouseId: string;
   targetWarehouseId: string;
@@ -116,7 +119,7 @@ export function transferStock(input: {
 
   const transaction = db.transaction(() => {
     const referenceId = randomUUID();
-    const source = applyStockChange({
+    const source = applyStockChange(workspaceId, {
       productId: input.productId,
       warehouseId: input.sourceWarehouseId,
       quantityDelta: -input.quantity,
@@ -124,7 +127,7 @@ export function transferStock(input: {
       note: input.note,
       referenceId,
     });
-    const target = applyStockChange({
+    const target = applyStockChange(workspaceId, {
       productId: input.productId,
       warehouseId: input.targetWarehouseId,
       quantityDelta: input.quantity,

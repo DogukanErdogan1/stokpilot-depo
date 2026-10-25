@@ -1,12 +1,13 @@
 import "dotenv/config";
 import { buildApp } from "./app.js";
-import { createInitialAdmin } from "./auth.js";
+import { createDemoAccount, createInitialAdmin } from "./auth.js";
 import { db } from "./db.js";
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? "0.0.0.0";
 try {
   await createInitialAdmin();
+  await createDemoAccount();
 } catch (error) {
   console.error(error instanceof Error ? error.message : "Yönetici hesabı oluşturulamadı.");
   db.close();

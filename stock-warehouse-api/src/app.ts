@@ -12,7 +12,7 @@ export async function buildApp() {
     trustProxy: process.env.TRUST_PROXY === "true",
   });
 
-  const publicApiPaths = new Set(["/api/auth/session", "/api/auth/login", "/api/auth/logout"]);
+  const publicApiPaths = new Set(["/api/auth/session", "/api/auth/login", "/api/auth/demo-login", "/api/auth/logout"]);
   app.addHook("preHandler", async (request, reply) => {
     const path = request.routeOptions.url ?? request.url.split("?")[0] ?? "";
     if (path.startsWith("/api/")) {
