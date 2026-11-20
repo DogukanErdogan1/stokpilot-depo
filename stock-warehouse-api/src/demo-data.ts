@@ -44,8 +44,8 @@ export function seedDemoWorkspace(workspaceId: string): void {
 
     const findProduct = db.prepare("SELECT id FROM products WHERE workspace_id = ? AND sku = ?");
     const addProduct = db.prepare(`
-      INSERT INTO products (id, workspace_id, sku, name, category, description, unit, cost, symbol, minimum_stock_quantity)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO products (id, workspace_id, sku, barcode, name, category, description, unit, cost, symbol, minimum_stock_quantity)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const addBalance = db.prepare(`
       INSERT INTO inventory_balances (workspace_id, product_id, warehouse_id, quantity, updated_at)
@@ -60,7 +60,7 @@ export function seedDemoWorkspace(workspaceId: string): void {
     for (const [productIndex, productSeed] of productSeeds.entries()) {
       if (findProduct.get(workspaceId, productSeed.sku)) continue;
       const productId = randomUUID();
-      addProduct.run(productId, workspaceId, productSeed.sku, productSeed.name, productSeed.category,
+      addProduct.run(productId, workspaceId, productSeed.sku, productSeed.sku, productSeed.name, productSeed.category,
         productSeed.description, productSeed.unit, productSeed.cost, productSeed.symbol, productSeed.minimum);
 
       for (const [warehouseIndex, warehouse] of warehouses.entries()) {

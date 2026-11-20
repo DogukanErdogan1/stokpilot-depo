@@ -7,6 +7,7 @@ let currentSearch = "";
 let movementTypeFilter = "all";
 let movementProductResults = [];
 let movementProductActiveIndex = -1;
+const movementBarcode = { lookup: null, camera: null };
 let showArchivedProducts = false;
 let showArchivedWarehouses = false;
 const warehouseFilters = {location:null, sort:"name"};
@@ -56,7 +57,7 @@ function filterControls(view, resultCount, totalCount) {
   const categories = state.summary?.categories || [];
   const range = (label, key, step = "1") => `<fieldset class="filter-range"><legend>${label}</legend><div><label><span>En az</span><input type="number" name="min${key}" min="0" step="${step}" placeholder="Sınır yok" value="${esc(filters[`min${key}`])}"></label><label><span>En çok</span><input type="number" name="max${key}" min="0" step="${step}" placeholder="Sınır yok" value="${esc(filters[`max${key}`])}"></label></div></fieldset>`;
   return `<section class="stock-filters" aria-label="${view === "products" ? "Ürün" : "Stok"} filtreleri">
-    <div class="page-toolbar"><div class="page-toolbar-left">${pageSearchControl(view === "products" ? "product-search" : "inventory-search", "Ürün, SKU veya kategori ara...")}<label class="visually-hidden" for="warehouse-filter">Depo</label><select class="filter-control" id="warehouse-filter"><option value="all">Tüm depolar</option>${activeWarehouses().map((warehouse) => `<option value="${esc(warehouse.id)}" ${filters.warehouse === warehouse.id ? "selected" : ""}>${esc(warehouse.name)}</option>`).join("")}</select><label class="visually-hidden" for="stock-sort">Sıralama</label><select class="filter-control" id="stock-sort">${[["name", "Ürün adına göre"], ["quantity-desc", "Stok: çoktan aza"], ["quantity-asc", "Stok: azdan çoğa"], ["cost-desc", "Maliyet: yüksekten düşüğe"], ["cost-asc", "Maliyet: düşükten yükseğe"], ["warehouses-desc", "Depo sayısı: çoktan aza"]].map(([value, label]) => `<option value="${value}" ${filters.sort === value ? "selected" : ""}>${label}</option>`).join("")}</select></div></div>
+    <div class="page-toolbar"><div class="page-toolbar-left">${pageSearchControl(view === "products" ? "product-search" : "inventory-search", "Ürün, SKU veya barkod ara...")}<label class="visually-hidden" for="warehouse-filter">Depo</label><select class="filter-control" id="warehouse-filter"><option value="all">Tüm depolar</option>${activeWarehouses().map((warehouse) => `<option value="${esc(warehouse.id)}" ${filters.warehouse === warehouse.id ? "selected" : ""}>${esc(warehouse.name)}</option>`).join("")}</select><label class="visually-hidden" for="stock-sort">Sıralama</label><select class="filter-control" id="stock-sort">${[["name", "Ürün adına göre"], ["quantity-desc", "Stok: çoktan aza"], ["quantity-asc", "Stok: azdan çoğa"], ["cost-desc", "Maliyet: yüksekten düşüğe"], ["cost-asc", "Maliyet: düşükten yükseğe"], ["warehouses-desc", "Depo sayısı: çoktan aza"]].map(([value, label]) => `<option value="${value}" ${filters.sort === value ? "selected" : ""}>${label}</option>`).join("")}</select></div></div>
     <div class="filter-status-row"><div class="filter-tabs" role="group" aria-label="Stok durumuna göre filtrele">${statuses.map(([value, label]) => `<button type="button" class="filter-tab ${filters.status === value ? "active" : ""}" aria-pressed="${filters.status === value}" data-action="filter-stock-status" data-status="${value}">${label}</button>`).join("")}</div><span class="table-count">${number(resultCount)} / ${number(totalCount)} ${view === "products" ? "ürün" : "stok satırı"}</span>${activeCount ? `<button class="subtle-link" type="button" data-action="clear-stock-filters">Filtreleri temizle (${activeCount})</button>` : ""}</div>
     ${view === "inventory" && filters.scope === "total" ? `<p class="filter-note">Durum ve miktar ürünün tüm depolardaki toplamına göre filtreleniyor.</p>` : ""}
     ${filters.productId ? `<div class="filter-context">Seçili ürün: <strong>${esc(productById(filters.productId)?.name || "Ürün")}</strong><button type="button" data-action="clear-stock-product" aria-label="Ürün seçimini kaldır">×</button></div>` : ""}
@@ -103,6 +104,8 @@ function beginModal() {
 
 function closeModal() {
   modalRequest++;
+  stopBarcodeLookup();
+  stopBarcodeCamera();
   setMovementProductPickerOpen(false);
   $("#modal-root").innerHTML = "";
   if (!modalContext) return;
@@ -491,7 +494,7 @@ function productRows(products) {
     const stock = stockFilters.products.warehouse === "all" ? sumStock(product) : Number(product.stock?.[stockFilters.products.warehouse] || 0);
     const status = statusFor(stock, product.minimum);
     const meterWidth = product.minimum > 0 ? Math.min(100, stock / (product.minimum * 2) * 100) : stock > 0 ? 100 : 0;
-    return `<tr class="${product.archived ? "archived-row" : ""}"><td><div class="product-cell">${productVisual(product)}<span class="product-name"><strong>${esc(product.name)}${product.archived ? " · Arşivde" : ""}</strong><small>${esc(product.category || "Genel")} · ${stockedWarehouseCount(product)} depoda stok var</small></span></div></td><td><span class="sku-code">${esc(product.sku)}</span></td><td><div class="stock-cell"><div class="stock-cell-top"><b>${number(stock)} ${esc(product.unit)}</b><span>Min. ${number(product.minimum)}</span></div><div class="stock-meter"><span class="${status}" style="width:${meterWidth}%"></span></div></div></td><td>${money(Number(product.cost || 0))}</td><td>${money(stock * Number(product.cost || 0))}</td><td>${statusPill(product, stock)}</td><td><div class="row-actions"><button class="button button-small" data-action="edit-product" data-product-id="${esc(product.id)}">Düzenle</button><button class="button button-small" data-action="toggle-product-archive" data-product-id="${esc(product.id)}">${product.archived ? "Geri al" : "Arşivle"}</button>${product.archived ? "" : `<button class="button button-small" data-action="open-movement" data-product-id="${esc(product.id)}">Stok işlemi</button>`}</div></td></tr>`;
+    return `<tr class="${product.archived ? "archived-row" : ""}"><td><div class="product-cell">${productVisual(product)}<span class="product-name"><strong>${esc(product.name)}${product.archived ? " · Arşivde" : ""}</strong><small>${esc(product.category || "Genel")} · ${stockedWarehouseCount(product)} depoda stok var</small></span></div></td><td><span class="sku-code">${esc(product.sku)}</span>${product.barcode ? `<small class="product-barcode-display">Barkod: ${esc(product.barcode)}</small>` : ""}</td><td><div class="stock-cell"><div class="stock-cell-top"><b>${number(stock)} ${esc(product.unit)}</b><span>Min. ${number(product.minimum)}</span></div><div class="stock-meter"><span class="${status}" style="width:${meterWidth}%"></span></div></div></td><td>${money(Number(product.cost || 0))}</td><td>${money(stock * Number(product.cost || 0))}</td><td>${statusPill(product, stock)}</td><td><div class="row-actions"><button class="button button-small" data-action="edit-product" data-product-id="${esc(product.id)}">Düzenle</button><button class="button button-small" data-action="toggle-product-archive" data-product-id="${esc(product.id)}">${product.archived ? "Geri al" : "Arşivle"}</button>${product.archived ? "" : `<button class="button button-small" data-action="open-movement" data-product-id="${esc(product.id)}">Stok işlemi</button>`}</div></td></tr>`;
   }).join("");
 }
 
@@ -634,11 +637,143 @@ function setMovementProductPickerOpen(open,returnFocus=false) {
 function selectMovementProduct(productId) {
   const product=movementProductResults.find(p=>p.id===productId)||productById(productId);
   if(!product||product.archived)return;
+  setBarcodePanel(false);
+  applyMovementProduct(product);
+  setMovementProductPickerOpen(false,true);
+}
+
+function applyMovementProduct(product) {
   state.products=[product,...state.products.filter(p=>p.id!==product.id).slice(0,2)];
   $("#movement-product").value=product.id;
   $("#movement-product-value").innerHTML=`<strong>${esc(product.name)}</strong><small>${esc(product.sku)} · ${esc(product.category||"Genel")}</small>`;
   $("#movement-product-trigger").setAttribute("aria-label",`Seçili ürün: ${product.name}, SKU ${product.sku}. Değiştirmek için aç.`);
-  setMovementProductPickerOpen(false,true);updateMovementFields();
+  updateMovementFields();
+}
+
+function movementBarcodePanel() {
+  return `<button id="movement-barcode-toggle" class="button barcode-toggle" type="button" data-action="toggle-barcode-panel"
+    aria-expanded="false" aria-controls="movement-barcode-panel">${icon("barcode")} Barkod okut</button>
+    <section id="movement-barcode-panel" class="barcode-panel" aria-label="Barkodla ürün seç" hidden>
+      <label for="movement-barcode">Barkod numarası</label>
+      <div class="barcode-input-row">
+        <input id="movement-barcode" type="text" maxlength="80" autocomplete="off" spellcheck="false" autocapitalize="off"
+          aria-describedby="movement-barcode-hint" placeholder="Barkodu gir">
+        <button class="button" type="button" data-action="find-barcode">Ürünü bul</button>
+      </div>
+      <span id="movement-barcode-hint" class="field-hint">Barkod okuyucunu kullan veya kodu yazıp Enter’a bas.</span>
+      <button id="barcode-camera-button" class="button barcode-camera-button" type="button" data-action="toggle-barcode-camera"
+        aria-expanded="false" aria-controls="barcode-camera-preview">${icon("camera")} <span>Kamerayı aç</span></button>
+      <div id="barcode-camera-preview" class="barcode-camera-preview" hidden>
+        <video id="barcode-camera-video" aria-label="Kamera önizlemesi" playsinline muted></video>
+        <span aria-hidden="true"></span>
+      </div>
+    </section>
+    <p id="movement-barcode-status" class="barcode-status" role="status"></p>`;
+}
+
+function setBarcodeStatus(message, isError = false) {
+  const status = $("#movement-barcode-status");
+  if (!status) return;
+  status.textContent = message;
+  status.classList.toggle("is-error", isError);
+}
+
+function stopBarcodeLookup() {
+  movementBarcode.lookup?.abort();
+  movementBarcode.lookup = null;
+}
+
+function stopBarcodeCamera() {
+  movementBarcode.camera?.abort();
+  movementBarcode.camera = null;
+  const button = $("#barcode-camera-button");
+  if (!button) return;
+  button.setAttribute("aria-expanded", "false");
+  $("span", button).textContent = "Kamerayı aç";
+  $("#barcode-camera-preview").hidden = true;
+}
+
+function setBarcodePanel(open, restoreFocus = false) {
+  const panel = $("#movement-barcode-panel");
+  if (!panel) return;
+  stopBarcodeLookup();
+  stopBarcodeCamera();
+  setBarcodeStatus("");
+  const toggle = $("#movement-barcode-toggle");
+  panel.hidden = !open;
+  toggle.setAttribute("aria-expanded", String(open));
+  $("#movement-form button[type='submit']").disabled = open;
+  if (open) {
+    setMovementProductPickerOpen(false);
+    $("#movement-barcode").focus();
+  } else if (restoreFocus) {
+    toggle.focus();
+  }
+}
+
+async function findMovementBarcode() {
+  const input = $("#movement-barcode");
+  const code = input.value.trim();
+  stopBarcodeLookup();
+  stopBarcodeCamera();
+  if (!code) {
+    setBarcodeStatus("Okutmak veya aramak için bir barkod gir.", true);
+    input.focus();
+    return;
+  }
+  const request = new AbortController();
+  movementBarcode.lookup = request;
+  setBarcodeStatus("Barkod aranıyor…");
+  try {
+    const result = await api(`/products/by-barcode?${new URLSearchParams({ code })}`, { signal: request.signal });
+    if (request.signal.aborted) return;
+    const product = normalizeProduct(result);
+    setBarcodePanel(false, true);
+    applyMovementProduct(product);
+    setBarcodeStatus(`${product.name} barkodla seçildi.`);
+  } catch (error) {
+    if (!request.signal.aborted) setBarcodeStatus(error.message, true);
+  } finally {
+    if (movementBarcode.lookup === request) movementBarcode.lookup = null;
+  }
+}
+
+async function toggleBarcodeCamera() {
+  if (movementBarcode.camera) {
+    stopBarcodeCamera();
+    setBarcodeStatus("");
+    return;
+  }
+  stopBarcodeLookup();
+  const camera = new AbortController();
+  movementBarcode.camera = camera;
+  const button = $("#barcode-camera-button");
+  button.setAttribute("aria-expanded", "true");
+  $("span", button).textContent = "Kamerayı kapat";
+  $("#barcode-camera-preview").hidden = false;
+  setBarcodeStatus("Kamera açılıyor…");
+  const video = $("#barcode-camera-video");
+  try {
+    const { scanBarcode } = await import("./barcode-camera.js");
+    const code = await scanBarcode(video, camera.signal, () => setBarcodeStatus("Barkodu kameraya hizala."));
+    if (camera.signal.aborted) return;
+    $("#movement-barcode").value = code;
+    await findMovementBarcode();
+  } catch (error) {
+    if (camera.signal.aborted) return;
+    stopBarcodeCamera();
+    const message = error.name === "NotAllowedError" ? "Kamera izni verilmedi. Barkodu elle girebilirsin."
+      : error.name === "NotFoundError" ? "Kamera bulunamadı. Barkodu elle girebilirsin."
+      : error.name === "NotReadableError" ? "Kamera kullanılamıyor. Barkodu elle girebilirsin."
+      : error.message;
+    setBarcodeStatus(message, true);
+  }
+}
+
+function productBarcodeField(barcode = "") {
+  return `<div class="form-field full"><label for="product-barcode">Barkod <span class="field-hint">(isteğe bağlı)</span></label>
+    <input id="product-barcode" name="barcode" maxlength="80" autocomplete="off" spellcheck="false"
+      placeholder="Örn. 8690000000012" value="${esc(barcode ?? "")}"></div>`;
 }
 
 function movementProductPicker(selected = "") {
@@ -648,8 +783,8 @@ function movementProductPicker(selected = "") {
       <span class="product-picker-value" id="movement-product-value"><strong>${esc(product.name)}</strong><small>${esc(product.sku)} · ${esc(product.category || "Genel")}</small></span><span class="product-picker-caret" aria-hidden="true">⌄</span>
     </button>
     <div class="product-picker-panel" id="movement-product-panel" hidden>
-      <label class="visually-hidden" for="movement-product-search">Ürün adı, SKU veya kategori ara</label>
-      <input class="product-picker-search" id="movement-product-search" type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="movement-product-options" autocomplete="off" placeholder="Ürün adı veya SKU ara...">
+      <label class="visually-hidden" for="movement-product-search">Ürün adı, SKU veya barkod ara</label>
+      <input class="product-picker-search" id="movement-product-search" type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="movement-product-options" autocomplete="off" placeholder="Ürün adı, SKU veya barkod ara...">
       <div class="product-picker-options" id="movement-product-options" role="listbox" aria-label="Ürünler"></div><div class="product-picker-pagination" id="movement-product-pagination"></div>
     </div>
   </div>`;
@@ -671,7 +806,7 @@ async function openModal(kind, presets = {}) {
   }
   const root = $("#modal-root");
   if (kind === "product") {
-    root.innerHTML = `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header class="modal-head"><div><h2 id="modal-title">Yeni ürün ekle</h2><p>Ürün kataloğuna yeni bir kayıt oluştur.</p></div><button class="modal-close" data-action="close-modal" aria-label="Kapat">${icon("close")}</button></header><form class="modal-form" id="product-form"><div class="form-grid"><div class="form-field"><label for="product-sku">SKU / Ürün kodu</label><input id="product-sku" name="sku" maxlength="40" placeholder="Örn. KBL-1042" required></div><div class="form-field"><label for="product-name">Ürün adı</label><input id="product-name" name="name" maxlength="100" placeholder="Ürün adını yaz" required></div><div class="form-field"><label for="product-category">Kategori</label><input id="product-category" name="category" maxlength="50" placeholder="Örn. Elektronik" value="Genel"></div><div class="form-field"><label for="product-unit">Birim</label><select id="product-unit" name="unit"><option>adet</option><option>kutu</option><option>paket</option><option>rulo</option><option>kg</option><option>litre</option></select></div><div class="form-field"><label for="product-minimum">Minimum stok</label><input id="product-minimum" name="minimum" type="number" min="0" step="1" value="5" required></div><div class="form-field"><label for="product-cost">Birim maliyet (₺)</label><input id="product-cost" name="cost" type="number" min="0" step="1" value="0"></div></div><div class="form-error" id="form-error"></div><div class="modal-actions"><button type="button" class="button" data-action="close-modal">Vazgeç</button><button class="button button-primary" type="submit">Ürünü kaydet</button></div></form></section></div>`;
+    root.innerHTML = `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header class="modal-head"><div><h2 id="modal-title">Yeni ürün ekle</h2><p>Ürün kataloğuna yeni bir kayıt oluştur.</p></div><button class="modal-close" data-action="close-modal" aria-label="Kapat">${icon("close")}</button></header><form class="modal-form" id="product-form"><div class="form-grid"><div class="form-field"><label for="product-sku">SKU / Ürün kodu</label><input id="product-sku" name="sku" maxlength="40" placeholder="Örn. KBL-1042" required></div><div class="form-field"><label for="product-name">Ürün adı</label><input id="product-name" name="name" maxlength="100" placeholder="Ürün adını yaz" required></div><div class="form-field"><label for="product-category">Kategori</label><input id="product-category" name="category" maxlength="50" placeholder="Örn. Elektronik" value="Genel"></div><div class="form-field"><label for="product-unit">Birim</label><select id="product-unit" name="unit"><option>adet</option><option>kutu</option><option>paket</option><option>rulo</option><option>kg</option><option>litre</option></select></div><div class="form-field"><label for="product-minimum">Minimum stok</label><input id="product-minimum" name="minimum" type="number" min="0" step="1" value="5" required></div><div class="form-field"><label for="product-cost">Birim maliyet (₺)</label><input id="product-cost" name="cost" type="number" min="0" step="1" value="0"></div>${productBarcodeField()}</div><div class="form-error" id="form-error"></div><div class="modal-actions"><button type="button" class="button" data-action="close-modal">Vazgeç</button><button class="button button-primary" type="submit">Ürünü kaydet</button></div></form></section></div>`;
   } else if (kind === "warehouse") {
     root.innerHTML = `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header class="modal-head"><div><h2 id="modal-title">Yeni depo ekle</h2><p>Stoklarını takip edeceğin bir konum oluştur.</p></div><button class="modal-close" data-action="close-modal" aria-label="Kapat">${icon("close")}</button></header><form class="modal-form" id="warehouse-form"><div class="form-grid"><div class="form-field"><label for="warehouse-code">Depo kodu</label><input id="warehouse-code" name="code" maxlength="20" placeholder="Örn. IST-01" required></div><div class="form-field"><label for="warehouse-name">Depo adı</label><input id="warehouse-name" name="name" maxlength="80" placeholder="Örn. İstanbul Deposu" required></div><div class="form-field full"><label for="warehouse-location">Konum (şehir / ilçe)</label><input id="warehouse-location" name="location" maxlength="160" placeholder="Örn. İstanbul / Esenyurt"><span class="field-hint">Depolarını bu konuma göre filtreleyebilirsin.</span></div><div class="form-field full"><label for="warehouse-address">Adres</label><input id="warehouse-address" name="address" maxlength="500" placeholder="İlçe, şehir"></div></div><div class="form-error" id="form-error"></div><div class="modal-actions"><button type="button" class="button" data-action="close-modal">Vazgeç</button><button class="button button-primary" type="submit">Depoyu kaydet</button></div></form></section></div>`;
   } else if (kind === "movement") {
@@ -681,7 +816,7 @@ async function openModal(kind, presets = {}) {
     }
     const selectedProduct = selectedForMovement.id;
     const selectedWarehouse = presets.warehouseId || activeWarehouses()[0].id;
-    root.innerHTML = `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header class="modal-head"><div><h2 id="modal-title">Stok işlemi oluştur</h2><p>Giriş, çıkış, sayım düzeltmesi veya depo transferi.</p></div><button class="modal-close" data-action="close-modal" aria-label="Kapat">${icon("close")}</button></header><form class="modal-form" id="movement-form"><div class="form-grid"><div class="form-field full"><label for="movement-type">İşlem türü</label><select id="movement-type" name="type"><option value="INBOUND">Stok girişi</option><option value="OUTBOUND">Stok çıkışı</option><option value="ADJUSTMENT">Sayım düzeltmesi</option><option value="TRANSFER">Depolar arası transfer</option></select></div><div class="form-field full"><label for="movement-product-trigger">Ürün</label>${movementProductPicker(selectedProduct)}</div><div class="form-field full" id="single-warehouse-field"><label for="movement-warehouse">Depo</label><select id="movement-warehouse" name="warehouseId">${warehouseOptions(selectedWarehouse)}</select></div><div class="form-field" id="source-warehouse-field" hidden><label for="movement-source">Kaynak depo</label><select id="movement-source" name="sourceWarehouseId">${warehouseOptions(selectedWarehouse)}</select></div><div class="form-field" id="target-warehouse-field" hidden><label for="movement-target">Hedef depo</label><select id="movement-target" name="targetWarehouseId">${warehouseOptions(activeWarehouses().find((item) => item.id !== selectedWarehouse)?.id || "")}</select></div><div class="form-field full"><label for="movement-quantity" id="movement-quantity-label">Miktar</label><input id="movement-quantity" name="quantity" type="number" min="1" step="1" value="1" required><span class="field-hint" id="movement-hint">${esc(productById(selectedProduct)?.unit || "adet")} cinsinden miktar gir.</span></div><div class="form-field full"><label for="movement-note">Açıklama <span style="font-weight:400;color:#9aa39c">(isteğe bağlı)</span></label><input id="movement-note" name="note" maxlength="120" placeholder="Örn. Tedarikçi teslimatı"></div></div><div class="form-error" id="form-error"></div><div class="modal-actions"><button type="button" class="button" data-action="close-modal">Vazgeç</button><button class="button button-primary" type="submit">İşlemi kaydet</button></div></form></section></div>`;
+    root.innerHTML = `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header class="modal-head"><div><h2 id="modal-title">Stok işlemi oluştur</h2><p>Giriş, çıkış, sayım düzeltmesi veya depo transferi.</p></div><button class="modal-close" data-action="close-modal" aria-label="Kapat">${icon("close")}</button></header><form class="modal-form" id="movement-form"><div class="form-grid"><div class="form-field full"><label for="movement-type">İşlem türü</label><select id="movement-type" name="type"><option value="INBOUND">Stok girişi</option><option value="OUTBOUND">Stok çıkışı</option><option value="ADJUSTMENT">Sayım düzeltmesi</option><option value="TRANSFER">Depolar arası transfer</option></select></div><div class="form-field full"><label for="movement-product-trigger">Ürün</label>${movementProductPicker(selectedProduct)}${movementBarcodePanel()}</div><div class="form-field full" id="single-warehouse-field"><label for="movement-warehouse">Depo</label><select id="movement-warehouse" name="warehouseId">${warehouseOptions(selectedWarehouse)}</select></div><div class="form-field" id="source-warehouse-field" hidden><label for="movement-source">Kaynak depo</label><select id="movement-source" name="sourceWarehouseId">${warehouseOptions(selectedWarehouse)}</select></div><div class="form-field" id="target-warehouse-field" hidden><label for="movement-target">Hedef depo</label><select id="movement-target" name="targetWarehouseId">${warehouseOptions(activeWarehouses().find((item) => item.id !== selectedWarehouse)?.id || "")}</select></div><div class="form-field full"><label for="movement-quantity" id="movement-quantity-label">Miktar</label><input id="movement-quantity" name="quantity" type="number" min="1" step="1" value="1" required><span class="field-hint" id="movement-hint">${esc(productById(selectedProduct)?.unit || "adet")} cinsinden miktar gir.</span></div><div class="form-field full"><label for="movement-note">Açıklama <span style="font-weight:400;color:#9aa39c">(isteğe bağlı)</span></label><input id="movement-note" name="note" maxlength="120" placeholder="Örn. Tedarikçi teslimatı"></div></div><div class="form-error" id="form-error"></div><div class="modal-actions"><button type="button" class="button" data-action="close-modal">Vazgeç</button><button class="button button-primary" type="submit">İşlemi kaydet</button></div></form></section></div>`;
     updateMovementFields();
   }
   beginModal();
@@ -693,7 +828,7 @@ function openProductEditor(productId) {
   const product = productById(productId);
   if (!product) return;
   const units = ["adet", "kutu", "paket", "rulo", "kg", "litre"];
-  $("#modal-root").innerHTML = `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header class="modal-head"><div><h2 id="modal-title">Ürünü düzenle</h2><p>Ürün bilgilerini güncelle.</p></div><button class="modal-close" data-action="close-modal" aria-label="Kapat">${icon("close")}</button></header><form class="modal-form" id="product-form" data-product-id="${esc(product.id)}"><div class="form-grid"><div class="form-field"><label for="product-sku">SKU / Ürün kodu</label><input id="product-sku" name="sku" maxlength="40" value="${esc(product.sku)}" required></div><div class="form-field"><label for="product-name">Ürün adı</label><input id="product-name" name="name" maxlength="100" value="${esc(product.name)}" required></div><div class="form-field"><label for="product-category">Kategori</label><input id="product-category" name="category" maxlength="50" value="${esc(product.category || "Genel")}"></div><div class="form-field"><label for="product-unit">Birim</label><select id="product-unit" name="unit">${units.map((unit) => `<option ${unit === product.unit ? "selected" : ""}>${unit}</option>`).join("")}</select></div><div class="form-field"><label for="product-minimum">Minimum stok</label><input id="product-minimum" name="minimum" type="number" min="0" step="1" value="${esc(product.minimum)}" required></div><div class="form-field"><label for="product-cost">Birim maliyet (₺)</label><input id="product-cost" name="cost" type="number" min="0" step="1" value="${esc(product.cost || 0)}"></div></div><div class="form-error" id="form-error"></div><div class="modal-actions"><button type="button" class="button" data-action="close-modal">Vazgeç</button><button class="button button-primary" type="submit">Değişiklikleri kaydet</button></div></form></section></div>`;
+  $("#modal-root").innerHTML = `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header class="modal-head"><div><h2 id="modal-title">Ürünü düzenle</h2><p>Ürün bilgilerini güncelle.</p></div><button class="modal-close" data-action="close-modal" aria-label="Kapat">${icon("close")}</button></header><form class="modal-form" id="product-form" data-product-id="${esc(product.id)}"><div class="form-grid"><div class="form-field"><label for="product-sku">SKU / Ürün kodu</label><input id="product-sku" name="sku" maxlength="40" value="${esc(product.sku)}" required></div><div class="form-field"><label for="product-name">Ürün adı</label><input id="product-name" name="name" maxlength="100" value="${esc(product.name)}" required></div><div class="form-field"><label for="product-category">Kategori</label><input id="product-category" name="category" maxlength="50" value="${esc(product.category || "Genel")}"></div><div class="form-field"><label for="product-unit">Birim</label><select id="product-unit" name="unit">${units.map((unit) => `<option ${unit === product.unit ? "selected" : ""}>${unit}</option>`).join("")}</select></div><div class="form-field"><label for="product-minimum">Minimum stok</label><input id="product-minimum" name="minimum" type="number" min="0" step="1" value="${esc(product.minimum)}" required></div><div class="form-field"><label for="product-cost">Birim maliyet (₺)</label><input id="product-cost" name="cost" type="number" min="0" step="1" value="${esc(product.cost || 0)}"></div>${productBarcodeField(product.barcode)}</div><div class="form-error" id="form-error"></div><div class="modal-actions"><button type="button" class="button" data-action="close-modal">Vazgeç</button><button class="button button-primary" type="submit">Değişiklikleri kaydet</button></div></form></section></div>`;
   beginModal();
   $("#product-sku").focus();
 }
@@ -744,6 +879,7 @@ async function saveProduct(form) {
   const productId = form.dataset.productId;
   const fields = {
     sku: String(data.get("sku")).trim(),
+    barcode: String(data.get("barcode") || "").trim() || null,
     name: String(data.get("name")).trim(),
     category: String(data.get("category") || "Genel").trim(),
     unit: String(data.get("unit")),
@@ -846,9 +982,11 @@ async function saveMovement(form) {
 }
 
 async function submitForm(form) {
-  const error = $("#form-error", form);
-  if (!form.reportValidity()) return;
   const submit = $("button[type='submit']", form);
+  if (submit.disabled || !form.reportValidity()) return;
+  const error = $("#form-error", form);
+  const barcodeToggle = $("#movement-barcode-toggle", form);
+  if (barcodeToggle) barcodeToggle.disabled = true;
   submit.disabled = true;
   error.textContent = "";
   error.classList.remove("visible");
@@ -860,6 +998,7 @@ async function submitForm(form) {
     error.textContent = problem.message || "İşlem kaydedilemedi.";
     error.classList.add("visible");
   } finally {
+    if (barcodeToggle) barcodeToggle.disabled = false;
     submit.disabled = false;
   }
 }
@@ -920,6 +1059,9 @@ document.addEventListener("click", (event) => {
   }
   if (action === "toggle-movement-product-picker") { setMovementProductPickerOpen(Boolean($("#movement-product-panel")?.hidden), true); return; }
   if (action === "select-movement-product") { selectMovementProduct(actionElement.dataset.productId); return; }
+  if (action === "toggle-barcode-panel") { setBarcodePanel($("#movement-barcode-panel").hidden, true); return; }
+  if (action === "find-barcode") { void findMovementBarcode(); return; }
+  if (action === "toggle-barcode-camera") { void toggleBarcodeCamera(); return; }
   if (action === "open-stock-alert") { openStockAlerts(actionElement.dataset.productId); return; }
   if (action === "show-stock-alerts") { openStockAlerts(); return; }
   if (action === "filter-stock-status") { stockFilters[currentView].status = actionElement.dataset.status; reloadList(); return; }
@@ -980,6 +1122,7 @@ document.addEventListener("change", (event) => {
 });
 
 document.addEventListener("input", (event) => {
+  if (event.target.matches("#movement-barcode")) { stopBarcodeLookup(); stopBarcodeCamera(); setBarcodeStatus(""); return; }
   if(event.target.matches("#movement-product-search")){scheduleMovementProductSearch(event.target.value);return;}
   if(event.target.matches("#global-search, #product-search, #inventory-search, #movement-search, #warehouse-search")){
     currentSearch=event.target.value;$("#global-search").value=currentSearch;
@@ -990,6 +1133,11 @@ document.addEventListener("input", (event) => {
 
 $("#mobile-menu").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
 document.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && event.target?.matches?.("#movement-barcode, #product-barcode")) {
+    event.preventDefault();
+    if (event.target.id === "movement-barcode") void findMovementBarcode();
+    return;
+  }
   if (event.target?.matches?.("#movement-product-search") && !$("#movement-product-panel")?.hidden) {
     if (event.key === "ArrowDown") { event.preventDefault(); setMovementProductActive(movementProductActiveIndex + 1); return; }
     if (event.key === "ArrowUp") { event.preventDefault(); setMovementProductActive(movementProductActiveIndex - 1); return; }
@@ -1015,5 +1163,11 @@ document.addEventListener("keydown", (event) => {
   }
 });
 window.addEventListener("hashchange", () => { const view = location.hash.slice(1) || "overview"; if (view !== currentView) { currentSearch = ""; $("#global-search").value = ""; closeModal(); } currentView = view; render(); });
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && movementBarcode.camera) {
+    stopBarcodeCamera();
+    setBarcodeStatus("");
+  }
+});
 
 void initializeAuth();

@@ -1,13 +1,13 @@
 import { Readable } from "node:stream";
 import type { z } from "zod";
-import { db } from "./db.js";
+import { barcodeKeySql, db } from "./db.js";
 import { stockListQuerySchema, movementListQuerySchema, warehouseListQuerySchema } from "./validation.js";
 
 type StockQuery = z.infer<typeof stockListQuerySchema>;
 type MovementQuery = z.infer<typeof movementListQuerySchema>;
 type Row = Record<string, any>;
 type SqlQuery = { prefix: string; from: string; where: string; order: string; values: Array<string | number> };
-const productColumns = `p.id, p.sku, p.name, p.category, p.description, p.unit, p.cost, p.symbol, p.archived,
+const productColumns = `p.id, p.sku, p.barcode, p.name, p.category, p.description, p.unit, p.cost, p.symbol, p.archived,
   p.minimum_stock_quantity AS minimumStockQuantity, p.created_at AS createdAt, p.updated_at AS updatedAt`;
 const totalPrefix = `WITH totals AS (
   SELECT ib.product_id, SUM(ib.quantity) AS totalQuantity,
@@ -44,8 +44,8 @@ function stockSql(workspaceId: string, query: StockQuery, view: "products" | "in
     ? "COALESCE(b.quantity, 0)" : "COALESCE(t.totalQuantity, 0)";
   if (query.productId) { conditions.push("p.id = ?"); values.push(query.productId); }
   if (query.q) {
-    conditions.push("(search_text(p.name) LIKE ? ESCAPE '\\' OR search_text(p.sku) LIKE ? ESCAPE '\\' OR search_text(p.category) LIKE ? ESCAPE '\\')");
-    const term = searchPattern(query.q); values.push(term, term, term);
+    conditions.push("(search_text(p.name) LIKE ? ESCAPE '\\' OR search_text(p.sku) LIKE ? ESCAPE '\\' OR search_text(p.category) LIKE ? ESCAPE '\\' OR search_text(COALESCE(p.barcode, '')) LIKE ? ESCAPE '\\')");
+    const term = searchPattern(query.q); values.push(term, term, term, term);
   }
   if (query.category) { conditions.push("p.category = ?"); values.push(query.category); }
   const status = query.lowStockOnly ? "low" : query.status;
@@ -79,6 +79,13 @@ function pageRows(sql: SqlQuery, columns: string, page: number, pageSize: number
 export function listProducts(workspaceId: string, query: StockQuery) {
   const result = pageRows(stockSql(workspaceId, query, "products"), productColumns, query.page, query.pageSize);
   return { ...result, items: enrichProducts(workspaceId, result.items) };
+}
+export function findProductByBarcode(workspaceId: string, barcode: string) {
+  const key = /^\d{12}$/.test(barcode) ? `0${barcode}` : barcode;
+  const product = db.prepare(`SELECT ${productColumns} FROM products p
+    WHERE p.workspace_id = ? AND p.barcode IS NOT NULL AND (${barcodeKeySql}) = ? AND p.archived = 0`)
+    .get(workspaceId, key) as Row | undefined;
+  return product ? enrichProducts(workspaceId, [product])[0] : undefined;
 }
 export function listInventory(workspaceId: string, query: StockQuery) {
   const result = pageRows(stockSql(workspaceId, { ...query, archived: false }, "inventory"), `${productColumns},

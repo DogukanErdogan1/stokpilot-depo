@@ -28,7 +28,7 @@ export async function buildApp() {
     reply.header("X-Content-Type-Options", "nosniff");
     reply.header("Referrer-Policy", "strict-origin-when-cross-origin");
     reply.header("X-Frame-Options", "DENY");
-    reply.header("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    if (!reply.hasHeader("Permissions-Policy")) reply.header("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
     if (process.env.PUBLIC_ORIGIN?.startsWith("https://")) reply.header("Strict-Transport-Security", "max-age=15552000");
     if (request.url.startsWith("/api/")) reply.header("Cache-Control", "no-store");
     return payload;
@@ -42,6 +42,11 @@ export async function buildApp() {
     }
 
     const message = error instanceof Error ? error.message : "";
+    if (message.includes("UNIQUE constraint failed") && message.includes("idx_products_workspace_barcode")) {
+      return reply.code(409).send({
+        error: { code: "DUPLICATE_BARCODE", message: "Bu barkod başka bir ürüne kayıtlı." },
+      });
+    }
     if (message.includes("UNIQUE constraint failed")) {
       return reply.code(409).send({
         error: { code: "DUPLICATE_VALUE", message: "Bu kod veya SKU zaten kullanılıyor." },
@@ -57,10 +62,16 @@ export async function buildApp() {
   await registerAuthRoutes(app);
   await registerRoutes(app);
 
+  app.get("/zxing-browser.js", async (_request, reply) => {
+    const asset = new URL("../umd/zxing-browser.min.js", import.meta.resolve("@zxing/browser"));
+    return reply.type("text/javascript; charset=utf-8").header("Cache-Control", "no-cache").send(await readFile(asset));
+  });
+
   const publicDirectory = resolve(process.env.PUBLIC_DIRECTORY ?? fileURLToPath(new URL("../public", import.meta.url)));
   const publicAssets: Record<string, { file: string; type: string }> = {
     "index.html": { file: "index.html", type: "text/html; charset=utf-8" },
     "app.js": { file: "app.js", type: "text/javascript; charset=utf-8" },
+    "barcode-camera.js": { file: "barcode-camera.js", type: "text/javascript; charset=utf-8" },
     "styles.css": { file: "styles.css", type: "text/css; charset=utf-8" },
     "auth.css": { file: "auth.css", type: "text/css; charset=utf-8" },
   };
@@ -75,6 +86,7 @@ export async function buildApp() {
           reply.type(asset.type);
           reply.header("Cache-Control", "no-cache");
           if (assetName === "index.html") {
+            reply.header("Permissions-Policy", "camera=(self), microphone=(), geolocation=()");
             reply.header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'");
           }
           return reply.send(content);

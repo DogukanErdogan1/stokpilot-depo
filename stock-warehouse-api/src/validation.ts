@@ -13,8 +13,12 @@ export function parse<TSchema extends z.ZodTypeAny>(schema: TSchema, input: unkn
 }
 
 const optionalText = (max: number) => z.string().trim().max(max).nullable().optional();
+const barcode = z.string().trim().min(1).max(80).refine(value => !/[\p{C}\p{Zl}\p{Zp}]/u.test(value), {
+  message: "Barkod tek satır olmalıdır.",
+});
 
 export const idParamsSchema = z.object({ id: z.string().uuid() });
+export const barcodeQuerySchema = z.object({ code: barcode });
 
 export const loginSchema = z.object({
   email: z.string().trim().email().max(254),
@@ -23,6 +27,7 @@ export const loginSchema = z.object({
 
 export const createProductSchema = z.object({
   sku: z.string().trim().min(1).max(64),
+  barcode: barcode.nullable().optional(),
   name: z.string().trim().min(1).max(160),
   category: z.string().trim().min(1).max(80).default("Genel"),
   description: optionalText(1000),
@@ -34,6 +39,7 @@ export const createProductSchema = z.object({
 
 export const updateProductSchema = z.object({
   sku: z.string().trim().min(1).max(64).optional(),
+  barcode: barcode.nullable().optional(),
   name: z.string().trim().min(1).max(160).optional(),
   category: z.string().trim().min(1).max(80).optional(),
   description: optionalText(1000),

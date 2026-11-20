@@ -122,3 +122,53 @@ html.modal-open{overflow:hidden;overscroll-behavior:none;scrollbar-gutter:stable
 .movement-pagination-top .button:disabled{opacity:.4;cursor:default}
 @media(max-width:620px){.warehouse-filter-grid{grid-template-columns:minmax(0,1fr);gap:13px}.warehouse-search-panel{padding:14px}.warehouse-search-panel .table-search,.warehouse-filter-field select{height:42px;font-size:16px}.warehouse-filter-label,.warehouse-filter-field>span{font-size:12px}.warehouse-filter-footer{font-size:11px}.movement-pagination-top{padding:11px 12px;gap:10px}.movement-pagination-top>div{margin-left:auto}.movement-page-summary{font-size:12px}}
 @media(max-width:620px){.movement-toolbar{flex-direction:column;align-items:stretch}.movement-toolbar .page-toolbar-left{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);width:100%;min-width:0}.movement-toolbar .table-search-wrap{width:100%;min-width:0}.movement-toolbar .table-search{height:42px;width:100%;font-size:16px}.movement-toolbar .filter-control{height:42px;width:100%;min-width:0;font-size:13px}.movement-toolbar>.table-count{align-self:flex-end}}
+
+.product-barcode-display {
+  display: block;
+  max-width: 18ch;
+  margin-top: 4px;
+  color: #56665d;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.barcode-toggle, .barcode-camera-button {
+  align-self: start;
+  justify-self: start;
+  color: var(--green-dark);
+}
+.barcode-panel {
+  display: grid;
+  gap: 8px;
+  padding: 13px;
+  border: 1px solid #dfe8e0;
+  border-radius: 12px;
+  background: #f6faf7;
+}
+.barcode-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+.barcode-input-row input { width: 100%; min-width: 0; }
+.barcode-camera-preview {
+  position: relative;
+  overflow: hidden;
+  height: clamp(112px, 28dvh, 210px);
+  border-radius: 9px;
+  background: #172321;
+}
+.barcode-camera-preview video { display: block; width: 100%; height: 100%; object-fit: contain; }
+.barcode-camera-preview span {
+  position: absolute;
+  inset: 20% 12%;
+  border: 1px solid #a6dec2;
+  border-radius: 9px;
+  pointer-events: none;
+}
+.barcode-status { margin: 0; color: var(--green-dark); font-size: 12px; overflow-wrap: anywhere; }
+.barcode-status:empty { display: none; }
+.barcode-status.is-error { color: #a83428; }
+#movement-form button[type="submit"]:disabled { opacity: .55; cursor: default; }
+@media (max-width: 999.98px) {
+  .barcode-toggle, .barcode-camera-button, .barcode-input-row .button { min-height: 44px; }
+}

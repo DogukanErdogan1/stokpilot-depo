@@ -72,3 +72,17 @@ test('warehouse location selection remains visible when facet letter casing chan
  const env=environment();env.run('warehouseFilters.location="İSTANBUL";listPages.warehouses.facets={locations:[{value:"İstanbul",count:1}]};listPages.warehouses.counts={active:1,archived:0}');
  assert.match(env.run('renderWarehouses()'),/value="location:İstanbul" selected/);
 });
+
+test("barcode lookup selects the matched movement product without saving a movement", async () => {
+  const env = environment(() => ({
+    id: "barcoded-product", sku: "SKU-88", name: "Koli", barcode: "0008/A", unit: "kutu", stock: { w1: 5 },
+  }));
+  env.run('setBarcodePanel(true); $("#movement-barcode").value = "0008/A"');
+  assert.equal(env.run('$("#movement-form button[type=\'submit\']").disabled'), true);
+  await env.run("findMovementBarcode()");
+  assert.equal(env.requests.length, 1);
+  assert.equal(env.requests[0].path, "/api/products/by-barcode?code=0008%2FA");
+  assert.equal(env.run('$("#movement-product").value'), "barcoded-product");
+  assert.equal(env.run('$("#movement-barcode-panel").hidden'), true);
+  assert.match(env.run('$("#movement-barcode-status").textContent'), /Koli barkodla seçildi/);
+});

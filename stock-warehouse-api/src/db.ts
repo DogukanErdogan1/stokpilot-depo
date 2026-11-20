@@ -8,6 +8,8 @@ const databasePath = resolve(configuredPath);
 mkdirSync(dirname(databasePath), { recursive: true });
 
 export const db = new Database(databasePath);
+// Readers may return UPC-A as EAN-13 with a leading zero.
+export const barcodeKeySql = "CASE WHEN length(barcode) = 12 AND barcode NOT GLOB '*[^0-9]*' THEN '0' || barcode ELSE barcode END";
 db.pragma("foreign_keys = ON");
 db.pragma("journal_mode = WAL");
 db.pragma("busy_timeout = 5000");
@@ -95,6 +97,7 @@ addColumnIfMissing("products", "category", "TEXT NOT NULL DEFAULT 'Genel'");
 addColumnIfMissing("products", "cost", "INTEGER NOT NULL DEFAULT 0 CHECK (cost >= 0)");
 addColumnIfMissing("products", "symbol", "TEXT NOT NULL DEFAULT '□'");
 addColumnIfMissing("products", "archived", "INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1))");
+addColumnIfMissing("products", "barcode", "TEXT");
 addColumnIfMissing("warehouses", "archived", "INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1))");
 addColumnIfMissing("warehouses", "location", "TEXT");
 
@@ -125,6 +128,7 @@ if (primaryWorkspace?.workspaceId) {
 
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_products_workspace_name ON products(workspace_id, name COLLATE NOCASE);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_products_workspace_barcode ON products(workspace_id, (${barcodeKeySql})) WHERE barcode IS NOT NULL;
   CREATE INDEX IF NOT EXISTS idx_warehouses_workspace_name ON warehouses(workspace_id, name COLLATE NOCASE);
   CREATE INDEX IF NOT EXISTS idx_inventory_workspace ON inventory_balances(workspace_id);
   CREATE INDEX IF NOT EXISTS idx_movements_workspace_created ON stock_movements(workspace_id, created_at DESC);

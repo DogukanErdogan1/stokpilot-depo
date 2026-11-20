@@ -31,6 +31,12 @@ Parolayı değiştirmek için `.env` içindeki `ADMIN_EMAIL` ve `ADMIN_PASSWORD`
 
 Bun ile geliştirme sunucusu: `bun install` ve `bun run dev:bun`.
 
+## Barkodla stok işlemi
+
+Ürünler ekranında ürün eklerken veya düzenlerken etiketteki kodu **Barkod** alanına yaz. Ardından **Stok işlemi → Barkod okut** adımlarından kamerayı aç, barkod okuyucunun kodu göndermesini sağla veya kodu elle yazıp Enter’a bas. Eşleşen ürün seçildikten sonra depo ve miktarı kontrol edip işlemi kaydet.
+
+Kamera HTTPS veya cihazın kendi localhost adresinde kullanılabilir. Kamera görüntüsü tarayıcıda işlenir. `GET /api/products/by-barcode?code=...` oturumun çalışma alanındaki aktif ürünü kodla eşleştirir. Yeni demo hesaplarında ürün SKU’ları örnek barkod olarak tanımlanır.
+
 ## Dağıtım
 
 Proje Docker ile paketlenebilir:

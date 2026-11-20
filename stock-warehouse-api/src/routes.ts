@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { db } from "./db.js";
-import { enrichProducts, exportRows, listInventory, listMovements, listProducts, listWarehouses, overview } from "./listing-service.js";
+import { enrichProducts, exportRows, findProductByBarcode, listInventory, listMovements, listProducts, listWarehouses, overview } from "./listing-service.js";
 import { AppError } from "./errors.js";
 import { adjustInventory, createStockMovement, transferStock } from "./inventory-service.js";
 import {
   adjustmentSchema,
+  barcodeQuerySchema,
   exportQuerySchema,
   createMovementSchema,
   createProductSchema,
@@ -40,17 +41,24 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
   app.get("/api/products", async request => listProducts(getWorkspaceId(request), parse(productListQuerySchema, request.query)));
 
+  app.get("/api/products/by-barcode", async request => {
+    const { code } = parse(barcodeQuerySchema, request.query);
+    const product = findProductByBarcode(getWorkspaceId(request), code);
+    if (!product) throw new AppError(404, "BARCODE_NOT_FOUND", "Bu barkoda ait aktif ürün bulunamadı.");
+    return product;
+  });
+
   app.post("/api/products", async (request, reply) => {
     const workspaceId = getWorkspaceId(request);
     const input = parse(createProductSchema, request.body);
     const id = randomUUID();
     db.prepare(`
-      INSERT INTO products (id, workspace_id, sku, name, category, description, unit, cost, symbol, minimum_stock_quantity)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, workspaceId, input.sku, input.name, input.category, input.description ?? null, input.unit, input.cost, input.symbol, input.minimumStockQuantity);
+      INSERT INTO products (id, workspace_id, sku, barcode, name, category, description, unit, cost, symbol, minimum_stock_quantity)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, workspaceId, input.sku, input.barcode ?? null, input.name, input.category, input.description ?? null, input.unit, input.cost, input.symbol, input.minimumStockQuantity);
 
     const product = db.prepare(`
-      SELECT id, sku, name, category, description, unit, cost, symbol, archived,
+      SELECT id, sku, barcode, name, category, description, unit, cost, symbol, archived,
              minimum_stock_quantity AS minimumStockQuantity,
              created_at AS createdAt, updated_at AS updatedAt
       FROM products WHERE id = ? AND workspace_id = ?
@@ -62,7 +70,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const workspaceId = getWorkspaceId(request);
     const { id } = parse(idParamsSchema, request.params);
     const product = db.prepare(`
-      SELECT id, sku, name, category, description, unit, cost, symbol, archived,
+      SELECT id, sku, barcode, name, category, description, unit, cost, symbol, archived,
              minimum_stock_quantity AS minimumStockQuantity,
              created_at AS createdAt, updated_at AS updatedAt
       FROM products WHERE id = ? AND workspace_id = ?
@@ -76,11 +84,12 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const { id } = parse(idParamsSchema, request.params);
     const input = parse(updateProductSchema, request.body);
     const existing = db.prepare(`
-      SELECT sku, name, category, description, unit, cost, symbol,
+      SELECT sku, barcode, name, category, description, unit, cost, symbol,
              archived, minimum_stock_quantity AS minimumStockQuantity
       FROM products WHERE id = ? AND workspace_id = ?
     `).get(id, workspaceId) as {
       sku: string;
+      barcode: string | null;
       name: string;
       category: string;
       description: string | null;
@@ -101,11 +110,12 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
     db.prepare(`
       UPDATE products SET
-        sku = ?, name = ?, category = ?, description = ?, unit = ?, cost = ?, symbol = ?, archived = ?, minimum_stock_quantity = ?,
+        sku = ?, barcode = ?, name = ?, category = ?, description = ?, unit = ?, cost = ?, symbol = ?, archived = ?, minimum_stock_quantity = ?,
         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
       WHERE id = ? AND workspace_id = ?
     `).run(
       input.sku ?? existing.sku,
+      input.barcode === undefined ? existing.barcode : input.barcode,
       input.name ?? existing.name,
       input.category ?? existing.category,
       input.description === undefined ? existing.description : input.description,
@@ -119,7 +129,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     );
 
     return db.prepare(`
-      SELECT id, sku, name, category, description, unit, cost, symbol, archived,
+      SELECT id, sku, barcode, name, category, description, unit, cost, symbol, archived,
              minimum_stock_quantity AS minimumStockQuantity,
              created_at AS createdAt, updated_at AS updatedAt
       FROM products WHERE id = ? AND workspace_id = ?
