@@ -15,7 +15,7 @@ const totalPrefix = `WITH totals AS (
   FROM inventory_balances ib JOIN warehouses w ON w.id = ib.warehouse_id AND w.workspace_id = ib.workspace_id
   WHERE ib.workspace_id = ? AND w.archived = 0 GROUP BY ib.product_id
 )`;
-function searchPattern(text: string): string {
+export function searchPattern(text: string): string {
   return `%${text.normalize("NFKC").toLocaleLowerCase("tr-TR").replace(/[\\%_]/g, "\\$&")}%`;
 }
 export function enrichProducts(workspaceId: string, products: Row[]): Row[] {
@@ -66,7 +66,7 @@ function stockSql(workspaceId: string, query: StockQuery, view: "products" | "in
   return { prefix: totalPrefix, from, where: `WHERE ${conditions.join(" AND ")}`,
     order: `${sorts[query.sort]}, p.name COLLATE NOCASE, p.id${inventory ? ", w.name COLLATE NOCASE, w.id" : ""}`, values };
 }
-function pageRows(sql: SqlQuery, columns: string, page: number, pageSize: number) {
+export function pageRows(sql: SqlQuery, columns: string, page: number, pageSize: number) {
   return db.transaction(() => {
     const { total } = db.prepare(`${sql.prefix} SELECT COUNT(*) AS total FROM ${sql.from} ${sql.where}`).get(...sql.values) as { total: number };
     const totalPages = Math.max(1, Math.ceil(total / pageSize));

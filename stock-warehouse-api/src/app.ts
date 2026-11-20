@@ -72,6 +72,7 @@ export async function buildApp() {
     "index.html": { file: "index.html", type: "text/html; charset=utf-8" },
     "app.js": { file: "app.js", type: "text/javascript; charset=utf-8" },
     "barcode-camera.js": { file: "barcode-camera.js", type: "text/javascript; charset=utf-8" },
+    "stock-counts.js": { file: "stock-counts.js", type: "text/javascript; charset=utf-8" },
     "styles.css": { file: "styles.css", type: "text/css; charset=utf-8" },
     "auth.css": { file: "auth.css", type: "text/css; charset=utf-8" },
   };

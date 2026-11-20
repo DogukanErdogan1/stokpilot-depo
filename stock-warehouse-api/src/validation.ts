@@ -119,6 +119,31 @@ export const adjustmentSchema = z.object({
   note: optionalText(500),
 });
 
+const countQuantity = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+export const startCountSchema = z.object({ warehouseId: z.string().uuid() });
+export const countListQuerySchema = z.object(paginationShape);
+export const countItemsQuerySchema = z.object({
+  ...paginationShape,
+  q: z.string().trim().max(160).optional(),
+  filter: z.enum(["all", "counted", "differences"]).default("all"),
+});
+export const saveCountItemsSchema = z.object({
+  revision: countQuantity,
+  items: z.array(z.object({
+    productId: z.string().uuid(),
+    countedQuantity: countQuantity.nullable(),
+    previousCountedQuantity: countQuantity.nullable(),
+    expectedQuantity: countQuantity,
+    stockRevision: countQuantity,
+  })).min(1).max(250).refine(items => new Set(items.map(item => item.productId)).size === items.length, {
+    message: "Her ürün bir kez gönderilmelidir.",
+  }),
+});
+export const finishCountSchema = z.object({
+  revision: countQuantity,
+  action: z.enum(["approve", "cancel"]),
+});
+
 export const transferSchema = z.object({
   productId: z.string().uuid(),
   sourceWarehouseId: z.string().uuid(),

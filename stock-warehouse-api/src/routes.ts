@@ -4,18 +4,24 @@ import { db } from "./db.js";
 import { enrichProducts, exportRows, findProductByBarcode, listInventory, listMovements, listProducts, listWarehouses, overview } from "./listing-service.js";
 import { AppError } from "./errors.js";
 import { adjustInventory, createStockMovement, transferStock } from "./inventory-service.js";
+import { finishStockCount, listStockCountItems, listStockCounts, saveStockCountItems, startStockCount } from "./stock-count-service.js";
 import {
   adjustmentSchema,
   barcodeQuerySchema,
+  countItemsQuerySchema,
+  countListQuerySchema,
   exportQuerySchema,
   createMovementSchema,
   createProductSchema,
   createWarehouseSchema,
+  finishCountSchema,
   warehouseListQuerySchema,
   idParamsSchema,
   inventoryQuerySchema,
   movementListQuerySchema,
   productListQuerySchema,
+  saveCountItemsSchema,
+  startCountSchema,
   transferSchema,
   updateWarehouseSchema,
   updateProductSchema,
@@ -193,6 +199,30 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   app.get("/api/inventory", async request => listInventory(getWorkspaceId(request), parse(inventoryQuerySchema, request.query)));
   app.get("/api/stock-movements", async request => listMovements(getWorkspaceId(request), parse(movementListQuerySchema, request.query)));
+
+  app.get("/api/stock-counts", async request =>
+    listStockCounts(getWorkspaceId(request), parse(countListQuerySchema, request.query)));
+
+  app.post("/api/stock-counts", async (request, reply) => {
+    const { warehouseId } = parse(startCountSchema, request.body);
+    const { count, created } = startStockCount(getWorkspaceId(request), warehouseId);
+    return reply.code(created ? 201 : 200).send(count);
+  });
+
+  app.get("/api/stock-counts/:id/items", async request => {
+    const { id } = parse(idParamsSchema, request.params);
+    return listStockCountItems(getWorkspaceId(request), id, parse(countItemsQuerySchema, request.query));
+  });
+
+  app.patch("/api/stock-counts/:id/items", async request => {
+    const { id } = parse(idParamsSchema, request.params);
+    return saveStockCountItems(getWorkspaceId(request), id, parse(saveCountItemsSchema, request.body));
+  });
+
+  app.post("/api/stock-counts/:id/finish", async request => {
+    const { id } = parse(idParamsSchema, request.params);
+    return finishStockCount(getWorkspaceId(request), id, parse(finishCountSchema, request.body));
+  });
 
   app.post("/api/stock-movements", async (request, reply) => {
     const workspaceId = getWorkspaceId(request);

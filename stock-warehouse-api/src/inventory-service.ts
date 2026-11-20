@@ -42,6 +42,7 @@ function applyStockChange(workspaceId: string, change: StockChange): { movementI
     VALUES (?, ?, ?, ?)
     ON CONFLICT(product_id, warehouse_id) DO UPDATE SET
       quantity = excluded.quantity,
+      revision = inventory_balances.revision + 1,
       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
   `).run(workspaceId, change.productId, change.warehouseId, nextQuantity);
 
@@ -83,6 +84,7 @@ export function adjustInventory(workspaceId: string, input: {
   warehouseId: string;
   countedQuantity: number;
   note?: string | null;
+  referenceId?: string;
 }) {
   const transaction = db.transaction(() => {
     ensureProductAndWarehouse(workspaceId, input.productId, input.warehouseId);
@@ -101,6 +103,7 @@ export function adjustInventory(workspaceId: string, input: {
       quantityDelta,
       type: "ADJUSTMENT",
       note: input.note,
+      referenceId: input.referenceId,
     });
   });
   return transaction.immediate();

@@ -81,6 +81,31 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
   );
 
+  CREATE TABLE IF NOT EXISTS stock_counts (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    warehouse_id TEXT NOT NULL REFERENCES warehouses(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'COMPLETED', 'CANCELLED')),
+    revision INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    closed_at TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS stock_count_items (
+    count_id TEXT NOT NULL REFERENCES stock_counts(id) ON DELETE CASCADE,
+    product_id TEXT NOT NULL,
+    sku TEXT NOT NULL,
+    name TEXT NOT NULL,
+    unit TEXT NOT NULL,
+    expected_quantity INTEGER NOT NULL CHECK (expected_quantity >= 0),
+    stock_revision INTEGER NOT NULL CHECK (stock_revision >= 0),
+    counted_quantity INTEGER NOT NULL CHECK (counted_quantity >= 0),
+    PRIMARY KEY (count_id, product_id)
+  );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_counts_open_warehouse
+    ON stock_counts(workspace_id, warehouse_id) WHERE status = 'DRAFT';
+  CREATE INDEX IF NOT EXISTS idx_stock_counts_workspace_created ON stock_counts(workspace_id, created_at DESC, id);
   CREATE INDEX IF NOT EXISTS idx_movements_created_at ON stock_movements(created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_movements_product_warehouse ON stock_movements(product_id, warehouse_id);
   CREATE INDEX IF NOT EXISTS idx_inventory_warehouse ON inventory_balances(warehouse_id);
@@ -105,6 +130,7 @@ addColumnIfMissing("users", "workspace_id", "TEXT REFERENCES workspaces(id) ON D
 addColumnIfMissing("products", "workspace_id", "TEXT REFERENCES workspaces(id) ON DELETE CASCADE");
 addColumnIfMissing("warehouses", "workspace_id", "TEXT REFERENCES workspaces(id) ON DELETE CASCADE");
 addColumnIfMissing("inventory_balances", "workspace_id", "TEXT REFERENCES workspaces(id) ON DELETE CASCADE");
+addColumnIfMissing("inventory_balances", "revision", "INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0)");
 addColumnIfMissing("stock_movements", "workspace_id", "TEXT REFERENCES workspaces(id) ON DELETE CASCADE");
 
 const unassignedUsers = db.prepare(`

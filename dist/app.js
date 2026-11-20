@@ -395,6 +395,7 @@ async function logout() {
   warehouseFilters.location=null;warehouseFilters.sort="name";showArchivedWarehouses=false;currentSearch="";$("#global-search").value="";listPages.warehouses.facets={locations:[]};listPages.warehouses.counts={active:0,archived:0};
   currentUser = null;
   state = { warehouses: [], products: [], movements: [] };
+  resetStockCounts();
   closeTopbarPopovers();
   closeModal();
   $("#app-shell").hidden = true;
@@ -403,7 +404,7 @@ async function logout() {
 
 function setView(view, { preserveSearch = false } = {}) {
   closeTopbarPopovers();
-  const allowed = ["overview", "inventory", "products", "warehouses", "movements"];
+  const allowed = ["overview", "inventory", "products", "warehouses", "movements", "counts"];
   const nextView = allowed.includes(view) ? view : "overview";
   if (nextView !== currentView && !preserveSearch) { currentSearch = ""; $("#global-search").value = ""; }
   if (nextView !== currentView && listPages[nextView]) invalidateList(nextView,true);
@@ -575,11 +576,12 @@ function renderMovements() {
 }
 
 function render() {
-  const views = {overview:["Genel bakış",renderOverview],inventory:["Stok durumu",renderInventory],products:["Ürünler",renderProducts],warehouses:["Depolar",renderWarehouses],movements:["Hareketler",renderMovements]};
+  const views = {overview:["Genel bakış",renderOverview],inventory:["Stok durumu",renderInventory],products:["Ürünler",renderProducts],warehouses:["Depolar",renderWarehouses],movements:["Hareketler",renderMovements],counts:["Depo sayımı",renderStockCounts]};
   if (!views[currentView]) currentView="overview";
   const focused=document.activeElement;
-  const preserve=focused?.matches?.("#product-search, #inventory-search, #movement-search, #warehouse-search, #warehouse-location-filter, #warehouse-sort, [data-page-size]") ? {id:focused.id,start:focused.selectionStart,end:focused.selectionEnd} : null;
+  const preserve=focused?.matches?.("#product-search, #inventory-search, #movement-search, #warehouse-search, #warehouse-location-filter, #warehouse-sort, #stock-count-search, [data-page-size]") ? {id:focused.id,start:focused.selectionStart,end:focused.selectionEnd} : null;
   ensureListPage(currentView);
+  if (currentView === "counts") ensureStockCountView();
   $$(".nav-link").forEach(link=>link.classList.toggle("active",link.dataset.view===currentView));
   $("#breadcrumb-current").textContent=views[currentView][0];
   $("#page-content").innerHTML=views[currentView][1]();
@@ -1045,6 +1047,7 @@ document.addEventListener("click", (event) => {
   const actionElement = event.target.closest("[data-action]");
   if (!actionElement) return;
   const { action } = actionElement.dataset;
+  if (action?.startsWith("count-")) { void handleStockCountAction(action, actionElement); return; }
   if(action==="go-page"){const p=listPages[currentView];const target=Number(actionElement.dataset.page);if(p&&!p.loading&&Number.isInteger(target)&&target>=1&&target<=p.totalPages){p.page=target;p.focusAfterLoad=actionElement.closest(".movement-pagination-top")?"movement-top":"page";reloadList({reset:false});}return;}
   if(action==="clear-warehouse-filters"){warehouseFilters.location=null;warehouseFilters.sort="name";currentSearch="";$("#global-search").value="";reloadList();$("#warehouse-search")?.focus();return;}
   if(action==="retry-list"){reloadList({reset:false});return;}
@@ -1099,6 +1102,7 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("submit", (event) => {
+  if (event.target.matches("#stock-count-start-form")) { event.preventDefault(); void startCountFromForm(event.target); return; }
   if (event.target.matches("#stock-filter-form")) { event.preventDefault(); applyStockFilters(event.target); return; }
   if (event.target.matches("#login-form")) {
     event.preventDefault();
@@ -1112,6 +1116,13 @@ document.addEventListener("submit", (event) => {
 });
 
 document.addEventListener("change", (event) => {
+  if (event.target.matches("#stock-count-warehouse")) { countScreen.warehouse = event.target.value; return; }
+  if (event.target.matches("#stock-count-differences")) {
+    countScreen.differencesOnly = event.target.checked;
+    countScreen.page = 1;
+    void readCountScreen();
+    return;
+  }
   if(event.target.matches("#warehouse-location-filter")){warehouseFilters.location=event.target.value==="all"?null:event.target.value.slice("location:".length);reloadList();return;}
   if(event.target.matches("#warehouse-sort")){warehouseFilters.sort=event.target.value;reloadList();return;}
   if(event.target.matches("[data-page-size]")){listPages[currentView].pageSize=Number(event.target.value);listPages[currentView].focusAfterLoad="size";reloadList();return;}
@@ -1122,17 +1133,29 @@ document.addEventListener("change", (event) => {
 });
 
 document.addEventListener("input", (event) => {
+  if (event.target.matches("[data-count-quantity]")) { trackCountInput(event.target); return; }
+  if (event.target.matches("#stock-count-search") || (currentView === "counts" && countScreen.count && event.target.matches("#global-search"))) {
+    updateStockCountSearch(event.target.value);
+    return;
+  }
   if (event.target.matches("#movement-barcode")) { stopBarcodeLookup(); stopBarcodeCamera(); setBarcodeStatus(""); return; }
   if(event.target.matches("#movement-product-search")){scheduleMovementProductSearch(event.target.value);return;}
   if(event.target.matches("#global-search, #product-search, #inventory-search, #movement-search, #warehouse-search")){
     currentSearch=event.target.value;$("#global-search").value=currentSearch;
-    if(currentView === "overview"){currentView="products";location.hash="products";$("#sidebar").classList.remove("open");}
+    if(currentView === "overview" || currentView === "counts"){currentView="products";location.hash="products";$("#sidebar").classList.remove("open");}
     reloadList({delay:250});
   }
 });
 
 $("#mobile-menu").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
 document.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && event.target?.matches?.("[data-count-quantity]")) {
+    event.preventDefault();
+    const fields = $$("[data-count-quantity]");
+    const next = fields[fields.indexOf(event.target) + 1];
+    next?.focus();
+    return;
+  }
   if (event.key === "Enter" && event.target?.matches?.("#movement-barcode, #product-barcode")) {
     event.preventDefault();
     if (event.target.id === "movement-barcode") void findMovementBarcode();
@@ -1168,6 +1191,11 @@ document.addEventListener("visibilitychange", () => {
     stopBarcodeCamera();
     setBarcodeStatus("");
   }
+});
+window.addEventListener("beforeunload", (event) => {
+  if (!countScreen.edits.size) return;
+  event.preventDefault();
+  event.returnValue = "";
 });
 
 void initializeAuth();

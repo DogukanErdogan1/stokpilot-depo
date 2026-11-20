@@ -37,6 +37,12 @@ Bun ile geliştirme sunucusu: `bun install` ve `bun run dev:bun`.
 
 Kamera HTTPS veya cihazın kendi localhost adresinde kullanılabilir. Kamera görüntüsü tarayıcıda işlenir. `GET /api/products/by-barcode?code=...` oturumun çalışma alanındaki aktif ürünü kodla eşleştirir. Yeni demo hesaplarında ürün SKU’ları örnek barkod olarak tanımlanır.
 
+## Depo sayımı
+
+**Depo sayımı** ekranında depoyu seç ve fiziki miktarı saydığın ürünlere gir. Üründen hiç kalmadıysa `0` yaz. Boş satırlar sayım dışında kalır. Girilen miktarları taslağa kaydedip sonra **Sayım geçmişi → Devam et** ile devam edebilirsin.
+
+**Farkları incele** tüm kaydedilen satırların sistemdeki karşılığını gösterir. **Onayla ve stoku güncelle** farklı miktarları tek işlemde uygular ve Hareketler ekranına sayım düzeltmesi olarak işler. Sayım kaydedildikten sonra stok hareketi gördüyse ilgili ürünü yeniden say veya sayım dışı bırak. İptal edilen sayımlar geçmişte görünür.
+
 ## Dağıtım
 
 Proje Docker ile paketlenebilir:

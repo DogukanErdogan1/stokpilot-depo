@@ -2,7 +2,8 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
-const source=readFileSync(new URL('../public/app.js',import.meta.url),'utf8').replace('void initializeAuth();','');
+const source=readFileSync(new URL('../public/stock-counts.js',import.meta.url),'utf8')+'\n'
+  +readFileSync(new URL('../public/app.js',import.meta.url),'utf8').replace('void initializeAuth();','');
 function environment(responder) {
  const elements=new Map(),listeners={},requests=[];
  const element=()=>({id:'',innerHTML:'',value:'',textContent:'',hidden:false,inert:false,style:{},isConnected:true,type:'search',selectionStart:0,selectionEnd:0,matches(){return false;},classList:{add(){},remove(){},toggle(){}},getAttribute(){return null;},setAttribute(){},removeAttribute(){},focus(){},append(){},addEventListener(){},remove(){},setSelectionRange(){},querySelector(selector){return get(selector);},querySelectorAll(){return [];} });
@@ -85,4 +86,34 @@ test("barcode lookup selects the matched movement product without saving a movem
   assert.equal(env.run('$("#movement-product").value'), "barcoded-product");
   assert.equal(env.run('$("#movement-barcode-panel").hidden'), true);
   assert.match(env.run('$("#movement-barcode-status").textContent'), /Koli barkodla seçildi/);
+});
+
+test("warehouse count keeps an explicit zero and saves the draft before showing review", async () => {
+  const count = { id: "draft-count", warehouseName: "Ana depo", status: "DRAFT", revision: 1, counted: 1, differences: 1 };
+  const row = { productId: "p1", name: "Koli", sku: "KL-1", unit: "adet", systemQuantity: 4, stockRevision: 2,
+    expectedQuantity: 4, countedQuantity: 0, available: 1, conflict: 0 };
+  const pagination = { page: 1, totalPages: 1, total: 1 };
+  const env = environment((path, options) => options.method === "PATCH" ? count : { count, items: [row], pagination });
+  env.run(`
+    showToast = () => {};
+    countScreen.count = { id: "draft-count", warehouseName: "Ana depo", status: "DRAFT", revision: 0, counted: 0, differences: 0 };
+    countScreen.results = { items: [{ productId: "p1", name: "Koli", unit: "adet", systemQuantity: 4, stockRevision: 2, countedQuantity: null }] };
+    trackCountInput({
+      dataset: { countQuantity: "p1" }, value: "0", valueAsNumber: 0,
+      validity: { badInput: false }, closest() { return document.querySelector("#fake-count-row"); }
+    });
+  `);
+  assert.equal(env.run("countScreen.edits.get('p1').countedQuantity"), 0);
+  assert.match(env.run('$("#stock-count-pending").textContent'), /1 kaydedilmemiş satır/);
+  await env.run('handleStockCountAction("count-review", {})');
+  assert.equal(env.requests[0].options.method, "PATCH");
+  assert.deepEqual(JSON.parse(env.requests[0].options.body), {
+    revision: 0,
+    items: [{ productId: "p1", countedQuantity: 0, previousCountedQuantity: null, expectedQuantity: 4, stockRevision: 2 }],
+  });
+  assert.match(env.requests[1].path, /filter=counted/);
+  assert.equal(env.requests.length, 2);
+  const html = env.run("renderStockCounts()");
+  assert.match(html, /Onayla ve stoku güncelle/);
+  assert.match(html, /-4 adet/);
 });
