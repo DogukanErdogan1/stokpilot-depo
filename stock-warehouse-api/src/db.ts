@@ -111,11 +111,11 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_inventory_warehouse ON inventory_balances(warehouse_id);
 `);
 
-function addColumnIfMissing(table: string, column: string, definition: string): void {
+function addColumnIfMissing(table: string, column: string, definition: string): boolean {
   const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
-  if (!columns.some((item) => item.name === column)) {
-    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
-  }
+  if (columns.some((item) => item.name === column)) return false;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  return true;
 }
 
 addColumnIfMissing("products", "category", "TEXT NOT NULL DEFAULT 'Genel'");
@@ -151,6 +151,24 @@ if (primaryWorkspace?.workspaceId) {
     db.prepare(`UPDATE ${table} SET workspace_id = ? WHERE workspace_id IS NULL`).run(primaryWorkspace.workspaceId);
   }
 }
+
+db.transaction(() => {
+  if (addColumnIfMissing("users", "role", "TEXT NOT NULL DEFAULT 'viewer' CHECK (role IN ('admin','operator','viewer'))")) {
+    // Before teams, each existing user owned a separate workspace.
+    db.exec("UPDATE users SET role = 'admin'");
+  }
+  addColumnIfMissing("users", "is_active", "INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1))");
+  if (addColumnIfMissing("workspaces", "is_demo", "INTEGER NOT NULL DEFAULT 0 CHECK (is_demo IN (0,1))")) {
+    const demo = process.env.DEMO_EMAIL?.trim().toLowerCase();
+    const admin = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+    if (demo && demo !== admin) {
+      db.prepare(`UPDATE workspaces SET is_demo = 1 WHERE id = (SELECT workspace_id FROM users WHERE email = ?)
+        AND (SELECT COUNT(*) FROM users WHERE workspace_id = workspaces.id) = 1`).run(demo);
+    }
+  }
+  addColumnIfMissing("stock_movements", "actor_user_id", "TEXT REFERENCES users(id) ON DELETE SET NULL");
+  addColumnIfMissing("stock_movements", "actor_name", "TEXT");
+}).immediate();
 
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_products_workspace_name ON products(workspace_id, name COLLATE NOCASE);

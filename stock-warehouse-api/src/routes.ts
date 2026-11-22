@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
+import { getRequestUser } from "./auth.js";
 import { db } from "./db.js";
 import { enrichProducts, exportRows, findProductByBarcode, listInventory, listMovements, listProducts, listWarehouses, overview } from "./listing-service.js";
 import { AppError } from "./errors.js";
@@ -29,9 +30,7 @@ import {
 import { parse } from "./validation.js";
 
 function getWorkspaceId(request: FastifyRequest): string {
-  const workspaceId = request.authUser?.workspaceId;
-  if (!workspaceId) throw new AppError(401, "UNAUTHENTICATED", "Oturumunuz sona ermiş. Yeniden giriş yapın.");
-  return workspaceId;
+  return getRequestUser(request).workspaceId;
 }
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
@@ -221,27 +220,28 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   app.post("/api/stock-counts/:id/finish", async request => {
     const { id } = parse(idParamsSchema, request.params);
-    return finishStockCount(getWorkspaceId(request), id, parse(finishCountSchema, request.body));
+    const actor = getRequestUser(request);
+    return finishStockCount(actor.workspaceId, actor, id, parse(finishCountSchema, request.body));
   });
 
   app.post("/api/stock-movements", async (request, reply) => {
-    const workspaceId = getWorkspaceId(request);
+    const actor = getRequestUser(request);
     const input = parse(createMovementSchema, request.body);
-    const result = createStockMovement(workspaceId, input);
+    const result = createStockMovement(actor.workspaceId, actor, input);
     return reply.code(201).send(result);
   });
 
   app.post("/api/inventory/adjustments", async (request, reply) => {
-    const workspaceId = getWorkspaceId(request);
+    const actor = getRequestUser(request);
     const input = parse(adjustmentSchema, request.body);
-    const result = adjustInventory(workspaceId, input);
+    const result = adjustInventory(actor.workspaceId, actor, input);
     return reply.code(201).send(result);
   });
 
   app.post("/api/transfers", async (request, reply) => {
-    const workspaceId = getWorkspaceId(request);
+    const actor = getRequestUser(request);
     const input = parse(transferSchema, request.body);
-    const result = transferStock(workspaceId, input);
+    const result = transferStock(actor.workspaceId, actor, input);
     return reply.code(201).send(result);
   });
 }

@@ -294,3 +294,58 @@ html.modal-open{overflow:hidden;overscroll-behavior:none;scrollbar-gutter:stable
   .count-footer-actions .button { flex: 1 1 auto; }
   .count-row-actions .button { white-space: normal; }
 }
+
+.team-roles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.team-roles > div {
+  display: grid;
+  gap: 5px;
+  padding: 13px 15px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfdfb;
+}
+.team-roles span, .team-state { color: #56665d; font-size: 12px; line-height: 1.5; }
+.team-members { list-style: none; margin: 0; padding: 0; }
+.team-members li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(100px, .42fr) 65px 90px;
+  align-items: center;
+  gap: 13px;
+  padding: 13px 18px;
+  border-top: 1px solid var(--line);
+}
+.team-members li > .button { justify-self: end; }
+.team-member { display: flex; align-items: center; min-width: 0; gap: 10px; }
+.team-member > div { min-width: 0; overflow-wrap: anywhere; }
+.team-member small { display: block; margin-top: 3px; color: #56665d; font-size: 11px; }
+.team-initials {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  color: var(--green-dark);
+  background: var(--green-light);
+  font-size: 11px;
+  font-weight: 700;
+}
+.team-role-chip { color: #3b5146; font-size: 12px; font-weight: 600; }
+.team-availability { color: #765325; font-size: 12px; }
+.team-availability.is-active { color: #1b6248; }
+.team-self { justify-self: end; color: #56665d; font-size: 11px; }
+.team-state { padding: 14px 18px; }
+.team-state p { margin: 0 0 8px; }
+.movement-actor { min-width: 105px; overflow-wrap: anywhere; }
+.movement-actor-unknown { color: #607168; }
+@media (max-width: 620px) {
+  .team-roles { grid-template-columns: 1fr; gap: 6px; }
+  .team-members li { grid-template-columns: minmax(0, 1fr) max-content max-content; gap: 9px 12px; padding: 12px 14px; }
+  .team-member { grid-column: 1 / -1; }
+  .team-members .button { min-height: 44px; }
+}

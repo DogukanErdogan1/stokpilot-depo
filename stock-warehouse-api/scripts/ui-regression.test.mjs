@@ -2,7 +2,8 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
-const source=readFileSync(new URL('../public/stock-counts.js',import.meta.url),'utf8')+'\n'
+const source=readFileSync(new URL('../public/team.js',import.meta.url),'utf8')+'\n'
+  +readFileSync(new URL('../public/stock-counts.js',import.meta.url),'utf8')+'\n'
   +readFileSync(new URL('../public/app.js',import.meta.url),'utf8').replace('void initializeAuth();','');
 function environment(responder) {
  const elements=new Map(),listeners={},requests=[];
@@ -96,6 +97,7 @@ test("warehouse count keeps an explicit zero and saves the draft before showing 
   const env = environment((path, options) => options.method === "PATCH" ? count : { count, items: [row], pagination });
   env.run(`
     showToast = () => {};
+    currentUser = { role: "admin" };
     countScreen.count = { id: "draft-count", warehouseName: "Ana depo", status: "DRAFT", revision: 0, counted: 0, differences: 0 };
     countScreen.results = { items: [{ productId: "p1", name: "Koli", unit: "adet", systemQuantity: 4, stockRevision: 2, countedQuantity: null }] };
     trackCountInput({
@@ -116,4 +118,35 @@ test("warehouse count keeps an explicit zero and saves the draft before showing 
   const html = env.run("renderStockCounts()");
   assert.match(html, /Onayla ve stoku güncelle/);
   assert.match(html, /-4 adet/);
+});
+
+test("role-specific screens show only the relevant write actions and keep viewer access to history", () => {
+  const env = environment();
+  env.run('currentUser = { role: "operator" }');
+  assert.match(env.run('renderInventory()'), /data-action="open-movement"/);
+  assert.doesNotMatch(env.run('renderProducts()'), /data-action="open-product"/);
+  assert.doesNotMatch(env.run('renderWarehouses()'), /data-action="open-warehouse"/);
+  assert.equal(env.run('canManageTeam()'), false);
+
+  env.run('currentUser = { role: "viewer" }');
+  assert.doesNotMatch(env.run('renderInventory()'), /data-action="open-movement"/);
+  assert.match(env.run('renderMovements()'), /CSV indir/);
+  assert.doesNotMatch(env.run('renderCountHistory()'), /Sayım başlat/);
+
+  env.run('currentUser = { role: "admin", isDemo: true }');
+  assert.match(env.run('renderProducts()'), /data-action="open-product"/);
+  assert.equal(env.run('canManageTeam()'), false);
+  env.run('currentUser = { role: "admin", isDemo: false }');
+  assert.equal(env.run('canManageTeam()'), true);
+});
+
+test("movement history shows the recorded actor and labels older records separately", () => {
+  const env = environment();
+  env.run(`state.warehouses = [{id:"w1", code:"ANA", name:"Ana depo"}];
+    const movement = { product: {name:"Koli", sku:"K-1", unit:"adet"}, warehouseId:"w1", type:"INBOUND", delta:1, at:"2026-11-20T12:00:00Z" };
+    listPages.movements.items = [{...movement, actorName:"Ekip <Üyesi>"}, movement];`);
+  const html = env.run('renderMovements()');
+  assert.match(html, /İŞLEMİ YAPAN/);
+  assert.match(html, /Ekip &lt;Üyesi&gt;/);
+  assert.match(html, /Kayıt yok/);
 });

@@ -100,8 +100,8 @@ function movementSql(workspaceId: string, query: MovementQuery): SqlQuery {
     if (value) { conditions.push(`${column} = ?`); values.push(value); }
   }
   if (query.q) {
-    conditions.push("(search_text(p.name) LIKE ? ESCAPE '\\' OR search_text(p.sku) LIKE ? ESCAPE '\\' OR search_text(w.name) LIKE ? ESCAPE '\\' OR search_text(COALESCE(sm.note, '')) LIKE ? ESCAPE '\\')");
-    const term = searchPattern(query.q); values.push(term, term, term, term);
+    conditions.push("(search_text(p.name) LIKE ? ESCAPE '\\' OR search_text(p.sku) LIKE ? ESCAPE '\\' OR search_text(w.name) LIKE ? ESCAPE '\\' OR search_text(sm.note) LIKE ? ESCAPE '\\' OR search_text(sm.actor_name) LIKE ? ESCAPE '\\')");
+    const term = searchPattern(query.q); values.push(term, term, term, term, term);
   }
   return { prefix: "", from: `stock_movements sm
     JOIN products p ON p.id = sm.product_id AND p.workspace_id = sm.workspace_id
@@ -110,7 +110,7 @@ function movementSql(workspaceId: string, query: MovementQuery): SqlQuery {
 }
 export function listMovements(workspaceId: string, query: MovementQuery) {
   return pageRows(movementSql(workspaceId, query), `sm.id, sm.type, sm.quantity_delta AS quantityDelta,
-    sm.note, sm.reference_id AS referenceId, sm.created_at AS createdAt,
+    sm.note, sm.reference_id AS referenceId, sm.created_at AS createdAt, sm.actor_user_id AS actorId, sm.actor_name AS actorName,
     p.id AS productId, p.name AS productName, p.sku, p.unit, p.symbol,
     w.id AS warehouseId, w.name AS warehouseName, w.code AS warehouseCode`, query.page, query.pageSize);
 }
@@ -183,9 +183,9 @@ export function exportRows(workspaceId: string, view: "products" | "inventory" |
   let sql: SqlQuery, columns: string, headings: string[], rowValues: (row: Row) => unknown[];
   if (view === "movements") {
     sql = movementSql(workspaceId, query as MovementQuery);
-    columns = "sm.created_at, p.name, p.sku, sm.type, w.name AS warehouseName, sm.quantity_delta, p.unit, sm.note";
-    headings = ["Tarih", "Ürün", "SKU", "İşlem", "Depo", "Miktar", "Birim", "Açıklama"];
-    rowValues = r => [r.created_at, r.name, r.sku, r.type, r.warehouseName, r.quantity_delta, r.unit, r.note];
+    columns = "sm.created_at, p.name, p.sku, sm.type, w.name AS warehouseName, sm.quantity_delta, p.unit, sm.note, sm.actor_name";
+    headings = ["Tarih", "Ürün", "SKU", "İşlem", "Depo", "Miktar", "Birim", "Açıklama", "İşlemi yapan"];
+    rowValues = r => [r.created_at, r.name, r.sku, r.type, r.warehouseName, r.quantity_delta, r.unit, r.note, r.actor_name];
   } else {
     const filters = query as StockQuery;
     sql = stockSql(workspaceId, { ...filters, archived: view === "products" && filters.archived }, view);

@@ -3,8 +3,10 @@ import { db } from "./db.js";
 import { AppError } from "./errors.js";
 
 type MovementType = "INBOUND" | "OUTBOUND" | "ADJUSTMENT" | "TRANSFER_IN" | "TRANSFER_OUT";
+export type MovementActor = { id: string; fullName: string };
 
 type StockChange = {
+  actor: MovementActor;
   productId: string;
   warehouseId: string;
   quantityDelta: number;
@@ -48,8 +50,8 @@ function applyStockChange(workspaceId: string, change: StockChange): { movementI
 
   const movementId = randomUUID();
   db.prepare(`
-    INSERT INTO stock_movements (id, workspace_id, product_id, warehouse_id, type, quantity_delta, reference_id, note)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO stock_movements (id, workspace_id, product_id, warehouse_id, type, quantity_delta, reference_id, note, actor_user_id, actor_name)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     movementId,
     workspaceId,
@@ -59,12 +61,14 @@ function applyStockChange(workspaceId: string, change: StockChange): { movementI
     change.quantityDelta,
     change.referenceId ?? null,
     change.note ?? null,
+    change.actor.id,
+    change.actor.fullName,
   );
 
   return { movementId, balance: nextQuantity };
 }
 
-export function createStockMovement(workspaceId: string, input: {
+export function createStockMovement(workspaceId: string, actor: MovementActor, input: {
   productId: string;
   warehouseId: string;
   type: "INBOUND" | "OUTBOUND";
@@ -74,12 +78,13 @@ export function createStockMovement(workspaceId: string, input: {
   const quantityDelta = input.type === "INBOUND" ? input.quantity : -input.quantity;
   const transaction = db.transaction(() => applyStockChange(workspaceId, {
     ...input,
+    actor,
     quantityDelta,
   }));
   return transaction.immediate();
 }
 
-export function adjustInventory(workspaceId: string, input: {
+export function adjustInventory(workspaceId: string, actor: MovementActor, input: {
   productId: string;
   warehouseId: string;
   countedQuantity: number;
@@ -99,6 +104,7 @@ export function adjustInventory(workspaceId: string, input: {
 
     return applyStockChange(workspaceId, {
       productId: input.productId,
+      actor,
       warehouseId: input.warehouseId,
       quantityDelta,
       type: "ADJUSTMENT",
@@ -109,7 +115,7 @@ export function adjustInventory(workspaceId: string, input: {
   return transaction.immediate();
 }
 
-export function transferStock(workspaceId: string, input: {
+export function transferStock(workspaceId: string, actor: MovementActor, input: {
   productId: string;
   sourceWarehouseId: string;
   targetWarehouseId: string;
@@ -124,6 +130,7 @@ export function transferStock(workspaceId: string, input: {
     const referenceId = randomUUID();
     const source = applyStockChange(workspaceId, {
       productId: input.productId,
+      actor,
       warehouseId: input.sourceWarehouseId,
       quantityDelta: -input.quantity,
       type: "TRANSFER_OUT",
@@ -132,6 +139,7 @@ export function transferStock(workspaceId: string, input: {
     });
     const target = applyStockChange(workspaceId, {
       productId: input.productId,
+      actor,
       warehouseId: input.targetWarehouseId,
       quantityDelta: input.quantity,
       type: "TRANSFER_IN",

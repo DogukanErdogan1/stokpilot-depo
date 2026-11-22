@@ -13,7 +13,7 @@ const workspace=randomUUID(), other=randomUUID(), user=randomUUID(), w1=randomUU
 const products=[];
 db.transaction(()=>{
  for(const id of [workspace,other])db.prepare('INSERT INTO workspaces(id,name) VALUES (?,?)').run(id,'Test');
- db.prepare('INSERT INTO users(id,email,full_name,password_hash,workspace_id) VALUES (?,?,?,?,?)').run(user,'pagination-test@example.test','Test','unused',workspace);
+ db.prepare("INSERT INTO users(id,email,full_name,password_hash,workspace_id,role) VALUES (?,?,?,?,?,'admin')").run(user,'pagination-test@example.test','Test','unused',workspace);
  db.prepare('INSERT INTO sessions(id,user_id,expires_at) VALUES (?,?,?)').run(createHash('sha256').update(token).digest('hex'),user,'2100-01-01');
  for(const [id,code] of [[w1,'TEST-A'],[w2,'TEST-B']])db.prepare('INSERT INTO warehouses(id,workspace_id,code,name) VALUES (?,?,?,?)').run(id,workspace,code,code);
  const insert=db.prepare('INSERT INTO products(id,workspace_id,sku,name,category,cost,minimum_stock_quantity) VALUES (?,?,?,?,?,?,?)');

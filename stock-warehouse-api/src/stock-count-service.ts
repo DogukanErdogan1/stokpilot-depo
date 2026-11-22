@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { z } from "zod";
 import { db } from "./db.js";
 import { AppError } from "./errors.js";
-import { adjustInventory } from "./inventory-service.js";
+import { adjustInventory, type MovementActor } from "./inventory-service.js";
 import { pageRows, searchPattern } from "./listing-service.js";
 import type { countItemsQuerySchema, finishCountSchema, saveCountItemsSchema } from "./validation.js";
 
@@ -136,7 +136,7 @@ export function saveStockCountItems(workspaceId: string, id: string, input: z.in
   }).immediate();
 }
 
-export function finishStockCount(workspaceId: string, id: string, input: z.infer<typeof finishCountSchema>) {
+export function finishStockCount(workspaceId: string, actor: MovementActor, id: string, input: z.infer<typeof finishCountSchema>) {
   const nextStatus = input.action === "approve" ? "COMPLETED" : "CANCELLED";
   return db.transaction(() => {
     const count = getCount(workspaceId, id);
@@ -157,7 +157,7 @@ export function finishStockCount(workspaceId: string, id: string, input: z.infer
       const differences = db.prepare(`SELECT product_id AS productId, counted_quantity AS countedQuantity FROM stock_count_items
         WHERE count_id = ? AND counted_quantity <> expected_quantity`).all(id) as Array<{ productId: string; countedQuantity: number }>;
       for (const item of differences) {
-        adjustInventory(workspaceId, { ...item, warehouseId: count.warehouseId, referenceId: id, note: "Depo sayımı" });
+        adjustInventory(workspaceId, actor, { ...item, warehouseId: count.warehouseId, referenceId: id, note: "Depo sayımı" });
       }
     }
     db.prepare(`UPDATE stock_counts SET status = ?, revision = revision + 1,

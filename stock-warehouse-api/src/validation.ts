@@ -24,6 +24,17 @@ export const loginSchema = z.object({
   email: z.string().trim().email().max(254),
   password: z.string().min(1).max(256),
 });
+const userRoleSchema = z.enum(["admin", "operator", "viewer"]);
+export type UserRole = z.infer<typeof userRoleSchema>;
+export const createMemberSchema = loginSchema.extend({
+  password: z.string().min(12, "Parola en az 12 karakter olmalıdır.").max(256),
+  fullName: z.string().trim().min(1).max(100),
+  role: userRoleSchema,
+});
+export const updateMemberSchema = z.object({
+  role: userRoleSchema.optional(),
+  active: z.boolean().optional(),
+}).refine(input => input.role !== undefined || input.active !== undefined, { message: "Bir rol veya erişim durumu seç." });
 
 export const createProductSchema = z.object({
   sku: z.string().trim().min(1).max(64),
@@ -57,6 +68,7 @@ const paginationShape = {
   page: z.coerce.number().int().min(1).max(1000000).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
 };
+export const teamListQuerySchema = z.object(paginationShape);
 export const stockListQuerySchema = z.object({
   ...paginationShape,
   q: z.string().trim().max(160).optional(),

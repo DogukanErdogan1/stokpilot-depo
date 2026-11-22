@@ -43,6 +43,14 @@ Kamera HTTPS veya cihazın kendi localhost adresinde kullanılabilir. Kamera gö
 
 **Farkları incele** tüm kaydedilen satırların sistemdeki karşılığını gösterir. **Onayla ve stoku güncelle** farklı miktarları tek işlemde uygular ve Hareketler ekranına sayım düzeltmesi olarak işler. Sayım kaydedildikten sonra stok hareketi gördüyse ilgili ürünü yeniden say veya sayım dışı bırak. İptal edilen sayımlar geçmişte görünür.
 
+## Ekip rolleri ve hareket geçmişi
+
+Yönetici olarak **Ekip → Üye ekle** ekranından ad, e-posta, rol ve ilk parolayı gir. Üye aynı çalışma alanına kendi hesabıyla giriş yapar. Yönetici ekibi, ürünleri, depoları ve stok işlemlerini yönetir. Depo görevlisi stok girişi, çıkışı, transfer ve sayım yapabilir. Salt okunur hesap kayıtları inceleyebilir ve CSV indirebilir.
+
+**Ekip → Düzenle** ekranında bir hesabın rolü değiştirilebilir veya erişimi durdurulabilir. Pasife alınan hesabın mevcut oturumları kapatılır. Herkese açık demo çalışma alanında ekip yönetimi kapalıdır.
+
+Yeni stok hareketlerindeki **İşlemi yapan** alanı, işlemi kaydeden hesabın adını gösterir. Bu alan hareket aramasına ve CSV dışa aktarımına dahildir. Eski hareketlerdeki boş alan, o hareket için kullanıcı bilgisinin kaydedilmediğini gösterir.
+
 ## Dağıtım
 
 Proje Docker ile paketlenebilir:

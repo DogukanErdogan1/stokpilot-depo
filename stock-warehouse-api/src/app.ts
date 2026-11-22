@@ -2,9 +2,10 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
-import { assertSameOrigin, registerAuthRoutes, requireAuth } from "./auth.js";
+import { assertSameOrigin, getRequestUser, registerAuthRoutes, requireAuth } from "./auth.js";
 import { AppError } from "./errors.js";
 import { registerRoutes } from "./routes.js";
+import { registerTeamRoutes } from "./team.js";
 
 export async function buildApp() {
   const app = Fastify({
@@ -13,13 +14,22 @@ export async function buildApp() {
   });
 
   const publicApiPaths = new Set(["/api/auth/session", "/api/auth/login", "/api/auth/demo-login", "/api/auth/logout"]);
+  const operatorActions = new Set([
+    "POST /api/stock-movements", "POST /api/inventory/adjustments", "POST /api/transfers",
+    "POST /api/stock-counts", "PATCH /api/stock-counts/:id/items", "POST /api/stock-counts/:id/finish",
+  ]);
   app.addHook("preHandler", async (request, reply) => {
     const path = request.routeOptions.url ?? request.url.split("?")[0] ?? "";
     if (path.startsWith("/api/")) {
-      if (!["GET", "HEAD", "OPTIONS"].includes(request.method)) assertSameOrigin(request);
+      const readOnly = ["GET", "HEAD", "OPTIONS"].includes(request.method);
+      if (!readOnly) assertSameOrigin(request);
       if (!publicApiPaths.has(path)) {
         await requireAuth(request, reply);
         if (reply.sent) return reply;
+        const { role } = getRequestUser(request);
+        if (!readOnly && role !== "admin" && !(role === "operator" && operatorActions.has(`${request.method} ${path}`))) {
+          throw new AppError(403, "FORBIDDEN", "Bu işlemi yapmak için yetkin yok.");
+        }
       }
     }
   });
@@ -60,6 +70,7 @@ export async function buildApp() {
   });
 
   await registerAuthRoutes(app);
+  await registerTeamRoutes(app);
   await registerRoutes(app);
 
   app.get("/zxing-browser.js", async (_request, reply) => {
@@ -73,6 +84,7 @@ export async function buildApp() {
     "app.js": { file: "app.js", type: "text/javascript; charset=utf-8" },
     "barcode-camera.js": { file: "barcode-camera.js", type: "text/javascript; charset=utf-8" },
     "stock-counts.js": { file: "stock-counts.js", type: "text/javascript; charset=utf-8" },
+    "team.js": { file: "team.js", type: "text/javascript; charset=utf-8" },
     "styles.css": { file: "styles.css", type: "text/css; charset=utf-8" },
     "auth.css": { file: "auth.css", type: "text/css; charset=utf-8" },
   };

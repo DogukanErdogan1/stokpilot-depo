@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { db } from "./db.js";
 import { seedDemoWorkspace } from "./demo-data.js";
 import { AppError } from "./errors.js";
-import { loginSchema, parse } from "./validation.js";
+import { loginSchema, parse, type UserRole } from "./validation.js";
 
 const SESSION_COOKIE = "stokpilot_session";
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -14,8 +14,13 @@ const loginAttempts = new Map<string, { count: number; resetAt: number }>();
 const demoLoginAttempts = new Map<string, { count: number; resetAt: number }>();
 const MAX_DEMO_LOGIN_ATTEMPTS = 1000;
 
-type PasswordHash = { salt: string; hash: string };
-export type AuthenticatedUser = { id: string; email: string; fullName: string; workspaceId: string };
+export type AuthenticatedUser = { id: string; email: string; fullName: string; workspaceId: string; role: UserRole; isDemo: boolean };
+type UserRecord = Omit<AuthenticatedUser, "isDemo"> & { isDemo: number };
+const userFields = "u.id, u.email, u.full_name AS fullName, u.workspace_id AS workspaceId, u.role, w.is_demo AS isDemo";
+
+function publicUser(user: UserRecord | AuthenticatedUser) {
+  return { id: user.id, email: user.email, fullName: user.fullName, role: user.role, isDemo: Boolean(user.isDemo) };
+}
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -23,7 +28,7 @@ declare module "fastify" {
   }
 }
 
-function normalizeEmail(value: string): string {
+export function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
 }
 
@@ -31,9 +36,10 @@ function validAdminEmail(email: string): boolean {
   return email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-async function hashPassword(password: string, salt = randomBytes(16).toString("hex")): Promise<PasswordHash> {
+export async function hashAccountPassword(password: string): Promise<string> {
+  const salt = randomBytes(16).toString("hex");
   const derived = await derivePasswordKey(password, salt, PASSWORD_BYTES);
-  return { salt, hash: derived.toString("hex") };
+  return `scrypt$${salt}$${derived.toString("hex")}`;
 }
 
 function derivePasswordKey(password: string, salt: string, length: number): Promise<Buffer> {
@@ -108,14 +114,14 @@ export async function createInitialAdmin(): Promise<void> {
     throw new Error("ADMIN_PASSWORD en az 12 karakter olmalıdır.");
   }
 
-  const passwordDigest = await hashPassword(password);
+  const passwordDigest = await hashAccountPassword(password);
   const workspaceId = randomUUID();
   const userId = randomUUID();
   const transaction = db.transaction(() => {
     db.prepare("INSERT INTO workspaces (id, name) VALUES (?, ?)")
       .run(workspaceId, process.env.ADMIN_NAME?.trim() || "StokPilot Yöneticisi");
-    db.prepare("INSERT INTO users (id, email, full_name, password_hash, workspace_id) VALUES (?, ?, ?, ?, ?)")
-      .run(userId, email, process.env.ADMIN_NAME?.trim() || "StokPilot Yöneticisi", `scrypt$${passwordDigest.salt}$${passwordDigest.hash}`, workspaceId);
+    db.prepare("INSERT INTO users (id, email, full_name, password_hash, workspace_id, role) VALUES (?, ?, ?, ?, ?, 'admin')")
+      .run(userId, email, process.env.ADMIN_NAME?.trim() || "StokPilot Yöneticisi", passwordDigest, workspaceId);
   });
   transaction.immediate();
 }
@@ -135,17 +141,17 @@ export async function createDemoAccount(): Promise<void> {
     throw new Error("Demo hesabı e-postası yönetici hesabından farklı olmalıdır.");
   }
 
-  const existing = db.prepare("SELECT id, workspace_id AS workspaceId FROM users WHERE email = ?").get(email) as { id: string; workspaceId: string | null } | undefined;
+  const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email);
   if (existing) return;
 
-  const passwordDigest = await hashPassword(password);
+  const passwordDigest = await hashAccountPassword(password);
   const workspaceId = randomUUID();
   const userId = randomUUID();
   const name = process.env.DEMO_NAME?.trim() || "StokPilot Demo";
   const transaction = db.transaction(() => {
-    db.prepare("INSERT INTO workspaces (id, name) VALUES (?, ?)").run(workspaceId, name);
-    db.prepare("INSERT INTO users (id, email, full_name, password_hash, workspace_id) VALUES (?, ?, ?, ?, ?)")
-      .run(userId, email, name, `scrypt$${passwordDigest.salt}$${passwordDigest.hash}`, workspaceId);
+    db.prepare("INSERT INTO workspaces (id, name, is_demo) VALUES (?, ?, 1)").run(workspaceId, name);
+    db.prepare("INSERT INTO users (id, email, full_name, password_hash, workspace_id, role) VALUES (?, ?, ?, ?, ?, 'admin')")
+      .run(userId, email, name, passwordDigest, workspaceId);
   });
   transaction.immediate();
   try {
@@ -169,10 +175,10 @@ export async function resetAdminPasswordFromEnvironment(): Promise<void> {
   const user = db.prepare("SELECT id FROM users WHERE email = ?").get(email) as { id: string } | undefined;
   if (!user) throw new Error("ADMIN_EMAIL ile eşleşen kullanıcı bulunamadı.");
 
-  const digest = await hashPassword(password);
+  const digest = await hashAccountPassword(password);
   const transaction = db.transaction(() => {
     db.prepare("UPDATE users SET password_hash = ? WHERE id = ?")
-      .run(`scrypt$${digest.salt}$${digest.hash}`, user.id);
+      .run(digest, user.id);
     db.prepare("DELETE FROM sessions WHERE user_id = ?").run(user.id);
   });
   transaction.immediate();
@@ -182,12 +188,17 @@ export async function getAuthenticatedUser(request: FastifyRequest): Promise<Aut
   const token = parseCookie(request, SESSION_COOKIE);
   if (!token || token.length < 32) return null;
   const session = db.prepare(`
-    SELECT users.id, users.email, users.full_name AS fullName, users.workspace_id AS workspaceId
-    FROM sessions JOIN users ON users.id = sessions.user_id
-    WHERE sessions.id = ? AND sessions.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-  `).get(sessionHash(token)) as AuthenticatedUser | undefined;
+    SELECT ${userFields}
+    FROM sessions s JOIN users u ON u.id = s.user_id JOIN workspaces w ON w.id = u.workspace_id
+    WHERE s.id = ? AND u.is_active = 1 AND s.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+  `).get(sessionHash(token)) as UserRecord | undefined;
   if (!session) return null;
-  return { id: session.id, email: session.email, fullName: session.fullName, workspaceId: session.workspaceId };
+  return { ...session, isDemo: Boolean(session.isDemo) };
+}
+
+export function getRequestUser(request: FastifyRequest): AuthenticatedUser {
+  if (!request.authUser) throw new AppError(401, "UNAUTHENTICATED", "Oturumunuz sona ermiş. Yeniden giriş yapın.");
+  return request.authUser;
 }
 
 export async function requireAuth(request: FastifyRequest, reply: FastifyReply): Promise<void> {
@@ -219,7 +230,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
   app.get("/api/auth/session", async (request) => {
     const user = await getAuthenticatedUser(request);
     if (!user) return { authenticated: false };
-    return { authenticated: true, user: { email: user.email, fullName: user.fullName } };
+    return { authenticated: true, user: publicUser(user) };
   });
 
   app.post("/api/auth/login", async (request, reply) => {
@@ -234,8 +245,9 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const email = normalizeEmail(input.email);
-    const user = db.prepare("SELECT id, email, full_name AS fullName, password_hash AS passwordHash FROM users WHERE email = ?")
-      .get(email) as { id: string; email: string; fullName: string; passwordHash: string } | undefined;
+    const user = db.prepare(`SELECT ${userFields}, u.password_hash AS passwordHash
+      FROM users u JOIN workspaces w ON w.id = u.workspace_id WHERE u.email = ? AND u.is_active = 1`)
+      .get(email) as (UserRecord & { passwordHash: string }) | undefined;
     const accepted = await verifyPassword(input.password, user?.passwordHash ?? "scrypt$invalid$00");
     if (!user || !accepted) {
       const previous = loginAttempts.get(key);
@@ -244,8 +256,15 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     }
 
     loginAttempts.delete(key);
-    createSession(user.id, reply);
-    return { authenticated: true, user: { email: user.email, fullName: user.fullName } };
+    // Password verification is asynchronous; reread the user before issuing a session.
+    const signedIn = db.transaction(() => {
+      const account = db.prepare(`SELECT ${userFields} FROM users u JOIN workspaces w ON w.id = u.workspace_id
+        WHERE u.id = ? AND u.is_active = 1 AND u.password_hash = ?`).get(user.id, user.passwordHash) as UserRecord | undefined;
+      if (!account) throw new AppError(401, "INVALID_CREDENTIALS", "E-posta veya şifre hatalı.");
+      createSession(account.id, reply);
+      return account;
+    }).immediate();
+    return { authenticated: true, user: publicUser(signedIn) };
   });
 
   app.post("/api/auth/demo-login", async (request, reply) => {
@@ -259,12 +278,12 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     if (!email || email === adminEmail) {
       throw new AppError(503, "DEMO_UNAVAILABLE", "Demo hesabı şu anda kullanılamıyor.");
     }
-    const user = db.prepare("SELECT id, email, full_name AS fullName FROM users WHERE email = ? AND workspace_id IS NOT NULL")
-      .get(email) as { id: string; email: string; fullName: string } | undefined;
+    const user = db.prepare(`SELECT ${userFields} FROM users u JOIN workspaces w ON w.id = u.workspace_id
+      WHERE u.email = ? AND u.is_active = 1 AND w.is_demo = 1`).get(email) as UserRecord | undefined;
     if (!user) throw new AppError(503, "DEMO_UNAVAILABLE", "Demo hesabı şu anda kullanılamıyor.");
 
     createSession(user.id, reply);
-    return { authenticated: true, user: { email: user.email, fullName: user.fullName } };
+    return { authenticated: true, user: publicUser(user) };
   });
 
   app.post("/api/auth/logout", async (request, reply) => {

@@ -97,11 +97,11 @@ function renderCountHistory() {
       <div><strong>${esc(count.warehouseName)}</strong><small>${dateTime(count.createdAt)}</small></div>
       <span class="count-status ${count.status.toLowerCase()}">${countStatusNames[count.status]}</span>
       <span class="count-history-numbers">${number(count.counted)} sayılan · ${number(count.differences)} fark</span>
-      <button class="button" type="button" data-action="count-open" data-id="${esc(count.id)}">${count.status === "DRAFT" ? "Devam et" : "İncele"}</button>
+      <button class="button" type="button" data-action="count-open" data-id="${esc(count.id)}">${count.status === "DRAFT" && canChangeStock() ? "Devam et" : "İncele"}</button>
     </li>`).join("")}</ul>${countPager(ui.history, "count-history-page")}`
     : ui.loadError ? "" : '<p class="count-empty">Henüz depo sayımı kaydı yok.</p>';
   return pageHeading("ENVANTER", "Depo sayımı", "Fiziki miktarları kaydet, stok farklarını incele ve birlikte onayla.")
-    + `<section class="panel count-start">
+    + (canChangeStock() ? `<section class="panel count-start">
       <div><h2>Sayım başlat</h2><p>Her deponun açık sayımına daha sonra devam edebilirsin.</p></div>
       ${options.length ? `<form id="stock-count-start-form" class="count-start-form">
         <label for="stock-count-warehouse">Depo</label>
@@ -109,9 +109,9 @@ function renderCountHistory() {
           <option value="">Depo seç</option>${options.map(item => `<option value="${esc(item.id)}" ${ui.warehouse === item.id ? "selected" : ""}>${esc(item.name)}</option>`).join("")}
         </select>
         <button class="button button-primary" type="submit" ${ui.busy ? "disabled" : ""}>${ui.busy ? "Açılıyor…" : "Sayımı aç"}</button>
-      </form>` : '<a class="button" href="#warehouses" data-view="warehouses">Depo ekle</a>'}
-    </section>${countFeedback()}
-    <section class="panel count-history"><header class="panel-header"><div><h2 class="panel-title">Sayım geçmişi</h2><p class="panel-subtitle">Açık ve tamamlanan sayımlar</p></div></header>
+      </form>` : canEditCatalog() ? '<a class="button" href="#warehouses" data-view="warehouses">Depo ekle</a>'
+        : '<p>Sayım açabilmek için aktif bir depo gerekli.</p>'}
+    </section>` : "") + `${countFeedback()}<section class="panel count-history"><header class="panel-header"><div><h2 class="panel-title">Sayım geçmişi</h2><p class="panel-subtitle">Açık ve tamamlanan sayımlar</p></div></header>
       ${content}</section>`;
 }
 
@@ -146,7 +146,7 @@ function countRow(row, editMode) {
         : `<strong>${current === null ? "—" : `${number(current)} ${esc(row.unit)}`}</strong>`}
     </div>
     <div><span class="count-mobile-label">Fark</span><strong data-count-difference class="count-difference${delta ? " is-changed" : ""}">${esc(describeCountDifference(current, baseline, row.unit))}</strong>
-      ${ui.review && row.conflict && ui.count.status === "DRAFT" && !ui.count.warehouseArchived ? `<div class="count-row-actions">
+      ${canChangeStock() && ui.review && row.conflict && ui.count.status === "DRAFT" && !ui.count.warehouseArchived ? `<div class="count-row-actions">
         ${row.available ? `<button type="button" class="button button-small" data-action="count-recount" data-id="${esc(row.productId)}" ${ui.busy ? "disabled" : ""}>Yeniden say</button>` : ""}
         <button type="button" class="button button-small" data-action="count-remove-row" data-id="${esc(row.productId)}" ${ui.busy ? "disabled" : ""}>Sayım dışı bırak</button></div>` : ""}
     </div></li>`;
@@ -156,7 +156,7 @@ function renderActiveCount() {
   const ui = countScreen;
   const { count } = ui;
   const draft = count.status === "DRAFT";
-  const active = draft && !count.warehouseArchived;
+  const active = canChangeStock() && draft && !count.warehouseArchived;
   const editing = active && !ui.review;
   const rows = ui.results?.items || [];
   const actionDisabled = ui.busy ? "disabled" : "";
@@ -196,7 +196,7 @@ function renderActiveCount() {
       ${countFeedback()}
       ${results}
       ${footer ? `<footer class="count-footer">${footer}</footer>` : ""}
-      ${draft ? `<div class="count-cancel">${ui.confirmCancel
+      ${draft && canChangeStock() ? `<div class="count-cancel">${ui.confirmCancel
         ? `<p>Bu sayım kapanacak ve stok değişikliği yapılmayacak.</p><button class="button" type="button" data-action="count-cancel-close" ${actionDisabled}>Vazgeç</button><button class="button count-danger" type="button" data-action="count-cancel" ${actionDisabled}>İptali onayla</button>`
         : `<button class="button count-danger" type="button" data-action="count-cancel-open" ${actionDisabled}>Sayımı iptal et</button>`}</div>` : ""}
     </section>`;
@@ -208,7 +208,7 @@ function renderStockCounts() {
 
 function enterStockCount(count) {
   const ui = countScreen;
-  Object.assign(ui, { count, results: null, page: 1, review: count.status !== "DRAFT" || Boolean(count.warehouseArchived),
+  Object.assign(ui, { count, results: null, page: 1, review: !canChangeStock() || count.status !== "DRAFT" || Boolean(count.warehouseArchived),
     differencesOnly: false, confirmCancel: false, search: "", error: "" });
   ui.edits.clear();
   void readCountScreen();
@@ -216,7 +216,7 @@ function enterStockCount(count) {
 
 async function startCountFromForm(form) {
   const ui = countScreen;
-  if (ui.busy || !form.reportValidity()) return;
+  if (!canChangeStock() || ui.busy || !form.reportValidity()) return;
   ui.warehouse = new FormData(form).get("warehouseId");
   ui.error = "";
   ui.busy = true;
@@ -261,6 +261,7 @@ async function saveCountChanges() {
   const ui = countScreen;
   if (ui.busy) return false;
   if (!ui.edits.size) return true;
+  if (!canChangeStock()) return false;
   const items = [...ui.edits.values()].map(({ value, ...item }) => item);
   if (items.some(item => item.countedQuantity !== null && (!Number.isSafeInteger(item.countedQuantity) || item.countedQuantity < 0))) {
     ui.error = "Sayılan miktarlar sıfır veya pozitif tam sayı olmalı.";
@@ -294,7 +295,7 @@ async function saveCountChanges() {
 
 async function finishCount(action) {
   const ui = countScreen;
-  if (ui.busy) return;
+  if (!canChangeStock() || ui.busy) return;
   ui.reader?.abort();
   clearTimeout(ui.timer);
   ui.loading = false;

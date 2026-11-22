@@ -18,7 +18,7 @@ function workspaceSession() {
   const user = randomUUID();
   const token = randomUUID();
   db.prepare("INSERT INTO workspaces (id, name) VALUES (?, ?)").run(workspace, "Barkod testi");
-  db.prepare("INSERT INTO users (id, email, full_name, password_hash, workspace_id) VALUES (?, ?, ?, ?, ?)")
+  db.prepare("INSERT INTO users (id, email, full_name, password_hash, workspace_id, role) VALUES (?, ?, ?, ?, ?, 'admin')")
     .run(user, `${user}@example.test`, "Test", "unused", workspace);
   db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)")
     .run(createHash("sha256").update(token).digest("hex"), user, "2100-01-01");

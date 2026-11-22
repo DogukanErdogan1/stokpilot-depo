@@ -11,7 +11,7 @@ const app=await buildApp();app.log.level='silent';
 const workspace=randomUUID(),other=randomUUID(),user=randomUUID(),token=randomUUID()+randomUUID(),ids=[];
 db.transaction(()=>{
  for(const id of [workspace,other])db.prepare('INSERT INTO workspaces(id,name) VALUES (?,?)').run(id,'Warehouse test');
- db.prepare('INSERT INTO users(id,email,full_name,password_hash,workspace_id) VALUES (?,?,?,?,?)').run(user,'warehouse@example.test','Test','unused',workspace);
+ db.prepare("INSERT INTO users(id,email,full_name,password_hash,workspace_id,role) VALUES (?,?,?,?,?,'admin')").run(user,'warehouse@example.test','Test','unused',workspace);
  db.prepare('INSERT INTO sessions(id,user_id,expires_at) VALUES (?,?,?)').run(createHash('sha256').update(token).digest('hex'),user,'2100-01-01');
  for(let i=0;i<31;i++){
   const id=randomUUID();ids.push(id);
