@@ -6,6 +6,7 @@ const source=readFileSync(new URL('../public/team.js',import.meta.url),'utf8')+'
   +readFileSync(new URL('../public/stock-counts.js',import.meta.url),'utf8')+'\n'
   +readFileSync(new URL('../public/reports.js',import.meta.url),'utf8')+'\n'
   +readFileSync(new URL('../public/purchases.js',import.meta.url),'utf8')+'\n'
+  +readFileSync(new URL('../public/product-import.js',import.meta.url),'utf8')+'\n'
   +readFileSync(new URL('../public/app.js',import.meta.url),'utf8').replace('void initializeAuth();','');
 function environment(responder) {
  const elements=new Map(),listeners={},requests=[];
@@ -201,4 +202,22 @@ test("partial purchases expose remaining quantities and reserve receipt actions 
   assert.doesNotMatch(html, /data-action="purchase-cancel"/);
   env.run('currentUser = {role:"viewer"}');
   assert.doesNotMatch(env.run("renderPurchases()"), /data-action="purchase-receive"/);
+});
+
+test("CSV preview limits rendered rows and blocks confirmation when any row is invalid", async () => {
+  const env = environment();
+  env.run(`currentUser = {role:"admin"};
+    const rows = Array.from({length:22}, (_, i) => ({line:i+2,sku:"SKU-"+i,name:"Ürün",category:"Genel",unit:"adet",cost:0,minimumStockQuantity:0,issues:i===21?["Yinelenen SKU"]:[]}));
+    productImport = {fileName:"urunler.csv",csv:"fixture",loading:false,saving:false,error:"",page:1,errorsOnly:false,
+      preview:{rows,total:22,valid:21,invalid:1,ignoredColumns:["Depo"]}};
+    refreshProductImport();`);
+  assert.match(env.run("renderProducts()"), /CSV ile ürün ekle/);
+  assert.equal(env.run('$("#product-import-save").disabled'), true);
+  assert.match(env.run('$("#product-import-preview").innerHTML'), /Sayfa 1 \/ 2/);
+  assert.doesNotMatch(env.run('$("#product-import-preview").innerHTML'), /SKU-21/);
+  assert.match(env.run('renderProductImportRows(productImport.preview,1,true)'), /Yinelenen SKU/);
+  await env.run("commitProductImport()");
+  assert.equal(env.requests.length, 0);
+  env.run('currentUser = {role:"viewer"}');
+  assert.doesNotMatch(env.run("renderProducts()"), /CSV ile ürün ekle/);
 });

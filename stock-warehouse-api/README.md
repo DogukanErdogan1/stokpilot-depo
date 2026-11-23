@@ -31,6 +31,12 @@ Parolayı değiştirmek için `.env` içindeki `ADMIN_EMAIL` ve `ADMIN_PASSWORD`
 
 Bun ile geliştirme sunucusu: `bun install` ve `bun run dev:bun`.
 
+## CSV ile toplu ürün ekleme
+
+Yönetici olarak **Ürünler → CSV ile ürün ekle** ekranından şablonu indir. `SKU` ve `Ürün adı` zorunludur. Kategori, birim, barkod, birim maliyet, minimum stok ve açıklama isteğe bağlıdır. Birim maliyeti tam TL olarak, SKU ve barkodu ise baştaki sıfırları koruyacak biçimde metin olarak gir. Virgül, noktalı virgül ve sekmeyle ayrılmış dosyalar desteklenir. Bir dosya 500 KB ve 2.000 ürün satırıyla sınırlıdır.
+
+Dosya seçildiğinde önizleme satır numarasıyla hataları, yinelenen SKU veya barkodları ve aktarım dışındaki sütunları gösterir. Hataları düzelttikten sonra **Ürünleri ekle** ile dosyayı topluca kaydet. Yeni ürünler sıfır stokla açılır.
+
 ## Barkodla stok işlemi
 
 Ürünler ekranında ürün eklerken veya düzenlerken etiketteki kodu **Barkod** alanına yaz. Ardından **Stok işlemi → Barkod okut** adımlarından kamerayı aç, barkod okuyucunun kodu göndermesini sağla veya kodu elle yazıp Enter’a bas. Eşleşen ürün seçildikten sonra depo ve miktarı kontrol edip işlemi kaydet.

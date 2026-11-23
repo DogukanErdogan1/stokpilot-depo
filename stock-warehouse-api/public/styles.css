@@ -475,3 +475,32 @@ html.modal-open{overflow:hidden;overscroll-behavior:none;scrollbar-gutter:stable
   .purchase-lines label:nth-of-type(2) { grid-column: 1; }
   .receipt-lines li { grid-template-columns: minmax(0, 1fr) minmax(55px, .5fr); }
 }
+
+.product-import-modal { width: min(100%, 780px); }
+.product-import-picker { display: flex; align-items: start; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+.product-import-picker .form-field { flex: 1 1 245px; }
+.product-import-picker input[type="file"] { height: auto; min-height: 38px; width: 100%; padding: 6px; font-size: 12px; }
+.product-import-picker input::file-selector-button {
+  margin-right: 8px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: #f3f7f4; color: var(--ink);
+}
+.product-import-picker > .button { margin-top: 17px; text-decoration: none; }
+.product-import-status, .product-import-warning, .product-import-error, .product-import-filter {
+  margin: 12px 0 8px; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere;
+}
+.product-import-status { color: #36584a; font-weight: 600; }
+.product-import-status:empty { display: none; }
+.product-import-warning, .product-import-error { padding: 8px 10px; border-radius: 7px; }
+.product-import-warning { color: #775017; background: #fff4e4; }
+.product-import-error { color: #932f26; background: #fff0ed; }
+.product-import-filter { display: flex; align-items: center; gap: 7px; color: #46594e; }
+.product-import-filter input { accent-color: var(--green); }
+.product-import-table { border: 1px solid var(--line); border-radius: 8px; }
+.product-import-table .data-table { min-width: 555px; }
+.product-import-table td { vertical-align: middle; }
+.product-import-issues { min-width: 140px; margin: 0; padding-left: 15px; color: #a53429; font-size: 11px; line-height: 1.45; }
+.product-import-valid { color: #1e684c; font-size: 11px; }
+@media (max-width: 620px) {
+  .product-import-picker > .button { margin-top: 0; }
+  .product-import-picker input[type="file"], .product-import-picker > .button { min-height: 44px; }
+  .product-import-modal .count-pager { padding: 10px 0; }
+}

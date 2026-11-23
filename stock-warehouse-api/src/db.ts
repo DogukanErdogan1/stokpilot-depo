@@ -10,6 +10,7 @@ mkdirSync(dirname(databasePath), { recursive: true });
 export const db = new Database(databasePath);
 // Readers may return UPC-A as EAN-13 with a leading zero.
 export const barcodeKeySql = "CASE WHEN length(barcode) = 12 AND barcode NOT GLOB '*[^0-9]*' THEN '0' || barcode ELSE barcode END";
+export const barcodeKey = (barcode: string) => /^\d{12}$/.test(barcode) ? `0${barcode}` : barcode;
 db.pragma("foreign_keys = ON");
 db.pragma("journal_mode = WAL");
 db.pragma("busy_timeout = 5000");
@@ -111,6 +112,14 @@ db.exec(`
     email TEXT,
     phone TEXT,
     note TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS product_imports (
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    request_id TEXT NOT NULL,
+    csv_digest TEXT NOT NULL,
+    imported INTEGER NOT NULL CHECK (imported > 0),
+    PRIMARY KEY (workspace_id, request_id)
   );
 
   CREATE TABLE IF NOT EXISTS purchase_orders (

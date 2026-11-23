@@ -7,6 +7,7 @@ import { AppError } from "./errors.js";
 import { registerRoutes } from "./routes.js";
 import { registerTeamRoutes } from "./team.js";
 import { registerPurchasingRoutes } from "./purchasing.js";
+import { registerProductImport } from "./product-import.js";
 
 export async function buildApp() {
   const app = Fastify({
@@ -79,6 +80,7 @@ export async function buildApp() {
   await registerAuthRoutes(app);
   await registerTeamRoutes(app);
   await registerPurchasingRoutes(app);
+  await registerProductImport(app);
   await registerRoutes(app);
 
   app.get("/zxing-browser.js", async (_request, reply) => {
@@ -95,6 +97,7 @@ export async function buildApp() {
     "team.js": { file: "team.js", type: "text/javascript; charset=utf-8" },
     "reports.js": { file: "reports.js", type: "text/javascript; charset=utf-8" },
     "purchases.js": { file: "purchases.js", type: "text/javascript; charset=utf-8" },
+    "product-import.js": { file: "product-import.js", type: "text/javascript; charset=utf-8" },
     "styles.css": { file: "styles.css", type: "text/css; charset=utf-8" },
     "auth.css": { file: "auth.css", type: "text/css; charset=utf-8" },
   };

@@ -7,6 +7,7 @@ import { AppError } from "./errors.js";
 import { adjustInventory, createStockMovement, transferStock } from "./inventory-service.js";
 import { finishStockCount, listStockCountItems, listStockCounts, saveStockCountItems, startStockCount } from "./stock-count-service.js";
 import { stockReport } from "./stock-reports.js";
+import { insertProduct } from "./product-service.js";
 import {
   adjustmentSchema,
   barcodeQuerySchema,
@@ -63,11 +64,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.post("/api/products", async (request, reply) => {
     const workspaceId = getWorkspaceId(request);
     const input = parse(createProductSchema, request.body);
-    const id = randomUUID();
-    db.prepare(`
-      INSERT INTO products (id, workspace_id, sku, barcode, name, category, description, unit, cost, symbol, minimum_stock_quantity)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, workspaceId, input.sku, input.barcode ?? null, input.name, input.category, input.description ?? null, input.unit, input.cost, input.symbol, input.minimumStockQuantity);
+    const id = insertProduct(workspaceId, input);
 
     const product = db.prepare(`
       SELECT id, sku, barcode, name, category, description, unit, cost, symbol, archived,

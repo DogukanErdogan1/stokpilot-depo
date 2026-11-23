@@ -105,6 +105,7 @@ function beginModal() {
 function closeModal() {
   modalRequest++;
   closePurchaseEditor();
+  closeProductImport();
   stopBarcodeLookup();
   stopBarcodeCamera();
   setMovementProductPickerOpen(false);
@@ -201,8 +202,16 @@ async function api(path, options = {}) {
   }
   if (response.status === 204) return null;
   const result = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(result?.error?.message || "İstek tamamlanamadı.");
+  if (!response.ok) throw Object.assign(new Error(result?.error?.message || "İstek tamamlanamadı."), { response: result });
   return result;
+}
+
+function newRequestId() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 15) | 64;
+  bytes[8] = (bytes[8] & 63) | 128;
+  const hex = [...bytes].map(byte => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 const listPages = Object.fromEntries(["products", "inventory", "movements", "warehouses"].map(view => [view, {
@@ -515,7 +524,9 @@ function productRows(products) {
 }
 
 function renderProducts() {
-  const actions = '<button class="button" data-action="export-csv">' + icon("download") + ' CSV indir</button>' + (canEditCatalog() ? `<button class="button button-primary" data-action="open-product">${icon("plus")} Yeni ürün</button>` : "");
+  const actions = `<button class="button" data-action="export-csv">${icon("download")} CSV indir</button>`
+    + (canEditCatalog() ? `<button class="button" type="button" data-action="product-import-open">CSV ile ürün ekle</button>
+      <button class="button button-primary" data-action="open-product">${icon("plus")} Yeni ürün</button>` : "");
   const archivedCount = metric("archivedProductCount");
   const products = filteredProducts();
   const total = metric(showArchivedProducts ? "archivedProductCount" : "productCount");
@@ -1070,6 +1081,7 @@ document.addEventListener("click", (event) => {
   if (action?.startsWith("count-")) { void handleStockCountAction(action, actionElement); return; }
   if (action?.startsWith("team-")) { handleTeamAction(action, actionElement); return; }
   if (action?.startsWith("purchase-")) { handlePurchaseAction(action, actionElement); return; }
+  if (action?.startsWith("product-import-")) { handleProductImportAction(action, actionElement); return; }
   if (action === "report-page") { handleReportClick(actionElement); return; }
   if(action==="go-page"){const p=listPages[currentView];const target=Number(actionElement.dataset.page);if(p&&!p.loading&&Number.isInteger(target)&&target>=1&&target<=p.totalPages){p.page=target;p.focusAfterLoad=actionElement.closest(".movement-pagination-top")?"movement-top":"page";reloadList({reset:false});}return;}
   if(action==="clear-warehouse-filters"){warehouseFilters.location=null;warehouseFilters.sort="name";currentSearch="";$("#global-search").value="";reloadList();$("#warehouse-search")?.focus();return;}
@@ -1155,6 +1167,19 @@ document.addEventListener("submit", (event) => {
 });
 
 document.addEventListener("change", (event) => {
+  if (event.target.matches("#product-import-file")) {
+    const [file] = event.target.files;
+    event.target.value = "";
+    if (file) void loadProductImport(file);
+    return;
+  }
+  if (event.target.matches("#product-import-errors-only") && productImport) {
+    productImport.errorsOnly = event.target.checked;
+    productImport.page = 1;
+    refreshProductImport();
+    $("#product-import-errors-only").focus({ preventScroll: true });
+    return;
+  }
   if (event.target.matches("#stock-count-warehouse")) { countScreen.warehouse = event.target.value; return; }
   if (event.target.matches("#stock-count-differences")) {
     countScreen.differencesOnly = event.target.checked;

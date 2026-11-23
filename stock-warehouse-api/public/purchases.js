@@ -192,14 +192,6 @@ function purchasingPicker(kind, label, placeholder) {
     <div id="purchase-results-${kind}" class="purchase-picker-results" aria-live="polite" hidden></div></div>`;
 }
 
-function purchaseUuid() {
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  bytes[6] = (bytes[6] & 15) | 64;
-  bytes[8] = (bytes[8] & 63) | 128;
-  const hex = [...bytes].map(byte => byte.toString(16).padStart(2, "0")).join("");
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
-
 function addPurchaseLine(product) {
   if (purchaseEditor.lines.has(product.id)) return;
   if (purchaseEditor.lines.size >= 100) { showToast("Bir sipariş en fazla 100 ürün içerebilir."); return; }
@@ -219,7 +211,7 @@ function showPurchaseForm({ supplier, product } = {}) {
     <div class="form-field full" id="purchase-lines"></div>
     <div class="form-field full"><label for="purchase-note">Not</label><input id="purchase-note" name="note" maxlength="500"></div></div>`,
     "Siparişi oluştur");
-  purchaseEditor = { requestId: purchaseUuid(), supplier: supplier || null, lines: new Map(),
+  purchaseEditor = { requestId: newRequestId(), supplier: supplier || null, lines: new Map(),
     searches: { product: {}, supplier: {} } };
   showSelectedSupplier();
   if (product) addPurchaseLine(product);
@@ -297,7 +289,7 @@ function showReceiptForm() {
       <label for="receipt-${item.id}">Gelen miktar</label>
       <input id="receipt-${item.id}" name="${item.id}" type="number" min="0" max="${item.quantity - item.received}" step="1" inputmode="numeric"></li>`).join("")}</ul>`,
     "Teslimatı kaydet", order.id);
-  $("#purchase-receipt-form").dataset.requestId = purchaseUuid();
+  $("#purchase-receipt-form").dataset.requestId = newRequestId();
 }
 
 async function savePurchasingForm(form) {

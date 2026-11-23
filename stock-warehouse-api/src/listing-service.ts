@@ -1,6 +1,6 @@
 import { Readable } from "node:stream";
 import type { z } from "zod";
-import { barcodeKeySql, db } from "./db.js";
+import { barcodeKey, barcodeKeySql, db } from "./db.js";
 import { stockListQuerySchema, movementListQuerySchema, warehouseListQuerySchema } from "./validation.js";
 
 type StockQuery = z.infer<typeof stockListQuerySchema>;
@@ -81,7 +81,7 @@ export function listProducts(workspaceId: string, query: StockQuery) {
   return { ...result, items: enrichProducts(workspaceId, result.items) };
 }
 export function findProductByBarcode(workspaceId: string, barcode: string) {
-  const key = /^\d{12}$/.test(barcode) ? `0${barcode}` : barcode;
+  const key = barcodeKey(barcode);
   const product = db.prepare(`SELECT ${productColumns} FROM products p
     WHERE p.workspace_id = ? AND p.barcode IS NOT NULL AND (${barcodeKeySql}) = ? AND p.archived = 0`)
     .get(workspaceId, key) as Row | undefined;
