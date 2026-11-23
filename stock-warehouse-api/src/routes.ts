@@ -6,6 +6,7 @@ import { enrichProducts, exportRows, findProductByBarcode, listInventory, listMo
 import { AppError } from "./errors.js";
 import { adjustInventory, createStockMovement, transferStock } from "./inventory-service.js";
 import { finishStockCount, listStockCountItems, listStockCounts, saveStockCountItems, startStockCount } from "./stock-count-service.js";
+import { stockReport } from "./stock-reports.js";
 import {
   adjustmentSchema,
   barcodeQuerySchema,
@@ -23,6 +24,8 @@ import {
   productListQuerySchema,
   saveCountItemsSchema,
   startCountSchema,
+  stockReportQuerySchema,
+  stockReportSectionSchema,
   transferSchema,
   updateWarehouseSchema,
   updateProductSchema,
@@ -37,6 +40,10 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.get("/health", async () => ({ status: "ok" }));
 
   app.get("/api/overview", async request => overview(getWorkspaceId(request)));
+  app.get("/api/reports/stock/:section", async request => {
+    const { section } = parse(stockReportSectionSchema, request.params);
+    return stockReport(getWorkspaceId(request), section, parse(stockReportQuerySchema, request.query));
+  });
   app.get("/api/export", async (request, reply) => {
     const { view } = parse(exportQuerySchema, request.query);
     const filters = view === "movements" ? parse(movementListQuerySchema, request.query) : parse(productListQuerySchema, request.query);

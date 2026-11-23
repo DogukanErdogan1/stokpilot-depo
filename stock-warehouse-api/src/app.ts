@@ -6,6 +6,7 @@ import { assertSameOrigin, getRequestUser, registerAuthRoutes, requireAuth } fro
 import { AppError } from "./errors.js";
 import { registerRoutes } from "./routes.js";
 import { registerTeamRoutes } from "./team.js";
+import { registerPurchasingRoutes } from "./purchasing.js";
 
 export async function buildApp() {
   const app = Fastify({
@@ -17,6 +18,7 @@ export async function buildApp() {
   const operatorActions = new Set([
     "POST /api/stock-movements", "POST /api/inventory/adjustments", "POST /api/transfers",
     "POST /api/stock-counts", "PATCH /api/stock-counts/:id/items", "POST /api/stock-counts/:id/finish",
+    "POST /api/purchase-orders/:id/receipts",
   ]);
   app.addHook("preHandler", async (request, reply) => {
     const path = request.routeOptions.url ?? request.url.split("?")[0] ?? "";
@@ -52,6 +54,11 @@ export async function buildApp() {
     }
 
     const message = error instanceof Error ? error.message : "";
+    if (message === "OPEN_PURCHASE_PRODUCT" || message === "OPEN_PURCHASE_WAREHOUSE") {
+      return reply.code(409).send({
+        error: { code: message, message: "Açık satın alma siparişi var. Önce teslimatı tamamla veya kalan siparişi iptal et." },
+      });
+    }
     if (message.includes("UNIQUE constraint failed") && message.includes("idx_products_workspace_barcode")) {
       return reply.code(409).send({
         error: { code: "DUPLICATE_BARCODE", message: "Bu barkod başka bir ürüne kayıtlı." },
@@ -71,6 +78,7 @@ export async function buildApp() {
 
   await registerAuthRoutes(app);
   await registerTeamRoutes(app);
+  await registerPurchasingRoutes(app);
   await registerRoutes(app);
 
   app.get("/zxing-browser.js", async (_request, reply) => {
@@ -85,6 +93,8 @@ export async function buildApp() {
     "barcode-camera.js": { file: "barcode-camera.js", type: "text/javascript; charset=utf-8" },
     "stock-counts.js": { file: "stock-counts.js", type: "text/javascript; charset=utf-8" },
     "team.js": { file: "team.js", type: "text/javascript; charset=utf-8" },
+    "reports.js": { file: "reports.js", type: "text/javascript; charset=utf-8" },
+    "purchases.js": { file: "purchases.js", type: "text/javascript; charset=utf-8" },
     "styles.css": { file: "styles.css", type: "text/css; charset=utf-8" },
     "auth.css": { file: "auth.css", type: "text/css; charset=utf-8" },
   };

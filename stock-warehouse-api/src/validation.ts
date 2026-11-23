@@ -69,6 +69,57 @@ const paginationShape = {
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
 };
 export const teamListQuerySchema = z.object(paginationShape);
+const calendarDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
+  const date = new Date(`${value}T00:00:00Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}, "Geçerli bir tarih seç.");
+export const stockReportQuerySchema = z.object({
+  ...paginationShape,
+  pageSize: z.coerce.number().int().min(1).max(100).default(10),
+  from: calendarDate,
+  to: calendarDate,
+  warehouseId: z.string().uuid().optional(),
+  idleDays: z.coerce.number().int().min(1).max(365).default(30),
+}).superRefine(({ from, to }, context) => {
+  const duration = Date.parse(to) - Date.parse(from);
+  if (duration < 0 || duration >= 366 * 86_400_000) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["to"], message: "Bitiş tarihini başlangıçtan önce seçme. En fazla 366 gün görüntülenebilir." });
+  }
+});
+export const stockReportSectionSchema = z.object({ section: z.enum(["summary", "outbound", "idle"]) });
+
+const supplierFields = z.object({
+  name: z.string().trim().min(1).max(160),
+  contact: optionalText(120),
+  email: z.string().trim().email().max(254).nullable().optional(),
+  phone: optionalText(60),
+  note: optionalText(500),
+});
+const purchasingSearch = { ...paginationShape, q: z.string().trim().max(160).optional() };
+export const supplierListQuery = z.object(purchasingSearch);
+export const createSupplierSchema = supplierFields;
+export const updateSupplierSchema = supplierFields.partial().refine(value => Object.keys(value).length > 0);
+export const purchaseListQuery = z.object({
+  ...purchasingSearch,
+  status: z.enum(["OPEN", "PARTIAL", "RECEIVED", "CANCELLED"]).optional(),
+});
+const purchaseQuantity = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+export const createPurchaseSchema = z.object({
+  requestId: z.string().uuid(),
+  supplierId: z.string().uuid(),
+  warehouseId: z.string().uuid(),
+  expectedDate: calendarDate.nullable().optional(),
+  note: optionalText(500),
+  items: z.array(z.object({
+    productId: z.string().uuid(), quantity: purchaseQuantity,
+    unitPriceCents: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  })).min(1).max(100).refine(items => new Set(items.map(item => item.productId)).size === items.length, "Her ürün siparişe bir kez eklenebilir."),
+});
+export const receivePurchaseSchema = z.object({
+  requestId: z.string().uuid(),
+  items: z.array(z.object({ itemId: z.string().uuid(), quantity: purchaseQuantity })).min(1).max(100)
+    .refine(items => new Set(items.map(item => item.itemId)).size === items.length, "Her teslimat kalemi bir kez girilebilir."),
+});
 export const stockListQuerySchema = z.object({
   ...paginationShape,
   q: z.string().trim().max(160).optional(),

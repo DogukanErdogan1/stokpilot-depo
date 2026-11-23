@@ -51,6 +51,18 @@ Yönetici olarak **Ekip → Üye ekle** ekranından ad, e-posta, rol ve ilk paro
 
 Yeni stok hareketlerindeki **İşlemi yapan** alanı, işlemi kaydeden hesabın adını gösterir. Bu alan hareket aramasına ve CSV dışa aktarımına dahildir. Eski hareketlerdeki boş alan, o hareket için kullanıcı bilgisinin kaydedilmediğini gösterir.
 
+## Stok raporları
+
+**Raporlar** ekranında tek depo veya tüm depolar için UTC+03:00 takvimine göre en fazla 366 günlük bir dönem seçilir. Çıkış sıralaması yalnızca stok çıkışlarını sayar. Hareketsiz stoklar seçilen bitiş gününde bakiyesi pozitif olan ve belirtilen süredir hareket görmeyen kayıtlardır.
+
+Stok değeri grafiği tahminidir. Ürünlerin gün sonu miktarları hareket geçmişinden hesaplanır ve güncel birim maliyetle çarpılır. Mevcut bakiyesiyle hareket geçmişi uyuşmayan ürün/depo kayıtları değer hesabından çıkarılır. Grafik klavyeyle gezilebilir ve günlük değerler tablo olarak görülebilir.
+
+## Tedarikçiler ve satın alma
+
+Yönetici, **Tedarikçiler** ekranından iletişim kaydı açıp **Satın alma → Yeni sipariş** ekranında teslimat deposunu, ürünleri, miktarları ve alış fiyatlarını seçer. Kritik stok bildirimindeki artı düğmesi sipariş formunu seçilen ürünle açar.
+
+Yönetici veya depo görevlisi, siparişteki **Teslim al** düğmesiyle gelen miktarları işler. Her teslimat için stok girişi ve işlemi yapan kişi kaydedilir. Eksik kalemler sonraki teslimata kalır. Yönetici kalan siparişi iptal edebilir. O ana kadar kaydedilen teslimatlar stokta ve işlem geçmişinde korunur. Siparişteki alış fiyatı ürün kartındaki birim maliyeti değiştirmez.
+
 ## Dağıtım
 
 Proje Docker ile paketlenebilir:

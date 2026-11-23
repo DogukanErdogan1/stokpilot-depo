@@ -104,6 +104,7 @@ function beginModal() {
 
 function closeModal() {
   modalRequest++;
+  closePurchaseEditor();
   stopBarcodeLookup();
   stopBarcodeCamera();
   setMovementProductPickerOpen(false);
@@ -141,11 +142,12 @@ function renderNotificationPopover() {
     ${visibleAlerts.length ? `<div class="notification-list">${visibleAlerts.map(({ product, quantity }) => {
       const empty = quantity === 0;
       const message = empty ? "Stok tükendi" : `${number(quantity)} ${esc(product.unit)} kaldı · minimum ${number(product.minimum)}`;
-      return `<button class="notification-item" type="button" data-action="open-stock-alert" data-product-id="${esc(product.id)}" aria-label="${esc(product.name)} stok uyarısı, ${esc(message)}">
+      return `<div class="notification-row"><button class="notification-item" type="button" data-action="open-stock-alert" data-product-id="${esc(product.id)}" aria-label="${esc(product.name)} stok uyarısı, ${esc(message)}">
         <span class="notification-symbol ${empty ? "empty" : "low"}" aria-hidden="true">${empty ? "!" : "↓"}</span>
         <span class="notification-item-copy"><strong>${esc(product.name)}</strong><small>${esc(product.sku)} · ${message} ${empty ? "" : esc(product.unit)}</small></span>
         <span class="notification-severity ${empty ? "empty" : "low"}">${empty ? "Tükendi" : "Kritik"}</span>
-      </button>`;
+      </button>${canEditCatalog() ? `<button class="button button-small notification-purchase" type="button" title="Sipariş oluştur"
+        aria-label="${esc(product.name)} için sipariş oluştur" data-action="purchase-from-alert" data-id="${esc(product.id)}">${icon("plus")} Sipariş</button>` : ""}</div>`;
     }).join("")}</div>${total > visibleAlerts.length ? `<p class="notification-overflow">+ ${number(total - visibleAlerts.length)} başka stok uyarısı</p>` : ""}` : `<div class="notification-empty"><span aria-hidden="true">✓</span><strong>Şimdilik her şey yolunda</strong><p>Minimum seviyenin altındaki ürün bulunmuyor.</p></div>`}
     <footer class="popover-footer"><button type="button" data-action="show-stock-alerts">Stok durumunu görüntüle <span aria-hidden="true">→</span></button></footer>`;
 }
@@ -307,6 +309,7 @@ async function refreshState() {
   state = { ...state, products: [], summary, warehouses: summary.warehouses.map(w => ({ ...w, archived: Boolean(w.archived) })),
     alerts: summary.alerts.map(normalizeProduct), movements: summary.recentMovements.map(normalizeMovement) };
   for (const view of Object.keys(listPages)) invalidateList(view);
+  invalidateStockReports();
   if (listPages[currentView]) await loadListPage(currentView);
 }
 
@@ -397,6 +400,8 @@ async function logout() {
   state = { warehouses: [], products: [], movements: [] };
   resetStockCounts();
   resetTeamScreen();
+  resetStockReports();
+  resetPurchasing();
   closeTopbarPopovers();
   closeModal();
   $("#app-shell").hidden = true;
@@ -405,7 +410,7 @@ async function logout() {
 
 function setView(view, { preserveSearch = false } = {}) {
   closeTopbarPopovers();
-  const allowed = ["overview", "inventory", "products", "warehouses", "movements", "counts"];
+  const allowed = ["overview", "inventory", "products", "warehouses", "movements", "counts", "reports", "suppliers", "purchases"];
   if (canManageTeam()) allowed.push("team");
   const nextView = allowed.includes(view) ? view : "overview";
   if (nextView !== currentView && !preserveSearch) { currentSearch = ""; $("#global-search").value = ""; }
@@ -586,17 +591,20 @@ function renderMovements() {
 }
 
 function render() {
-  const views = {overview:["Genel bakış",renderOverview],inventory:["Stok durumu",renderInventory],products:["Ürünler",renderProducts],warehouses:["Depolar",renderWarehouses],movements:["Hareketler",renderMovements],counts:["Depo sayımı",renderStockCounts],team:["Ekip",renderTeam]};
+  const views = {overview:["Genel bakış",renderOverview],inventory:["Stok durumu",renderInventory],products:["Ürünler",renderProducts],warehouses:["Depolar",renderWarehouses],movements:["Hareketler",renderMovements],counts:["Depo sayımı",renderStockCounts],team:["Ekip",renderTeam],reports:["Raporlar",renderStockReports],suppliers:["Tedarikçiler",renderSuppliers],purchases:["Satın alma",renderPurchases]};
   if (!Object.hasOwn(views, currentView) || (currentView === "team" && !canManageTeam())) currentView = "overview";
   const focused=document.activeElement;
   const preserve=focused?.matches?.("#product-search, #inventory-search, #movement-search, #warehouse-search, #warehouse-location-filter, #warehouse-sort, #stock-count-search, [data-page-size]") ? {id:focused.id,start:focused.selectionStart,end:focused.selectionEnd} : null;
   ensureListPage(currentView);
   if (currentView === "counts") ensureStockCountView();
   if (currentView === "team") ensureTeam();
+  if (currentView === "reports") ensureStockReports();
+  if (currentView === "suppliers" || currentView === "purchases") ensurePurchasingView(currentView);
   $("#team-nav").hidden = !canManageTeam();
   $$(".nav-link").forEach(link=>link.classList.toggle("active",link.dataset.view===currentView));
   $("#breadcrumb-current").textContent=views[currentView][0];
   $("#page-content").innerHTML=views[currentView][1]();
+  if (currentView === "reports") bindReportChart();
   $("#nav-stock-count").textContent=metric("criticalCount");
   updateNotificationIndicator();
   if (!$("#notification-popover").hidden) renderNotificationPopover();
@@ -1061,6 +1069,8 @@ document.addEventListener("click", (event) => {
   const { action } = actionElement.dataset;
   if (action?.startsWith("count-")) { void handleStockCountAction(action, actionElement); return; }
   if (action?.startsWith("team-")) { handleTeamAction(action, actionElement); return; }
+  if (action?.startsWith("purchase-")) { handlePurchaseAction(action, actionElement); return; }
+  if (action === "report-page") { handleReportClick(actionElement); return; }
   if(action==="go-page"){const p=listPages[currentView];const target=Number(actionElement.dataset.page);if(p&&!p.loading&&Number.isInteger(target)&&target>=1&&target<=p.totalPages){p.page=target;p.focusAfterLoad=actionElement.closest(".movement-pagination-top")?"movement-top":"page";reloadList({reset:false});}return;}
   if(action==="clear-warehouse-filters"){warehouseFilters.location=null;warehouseFilters.sort="name";currentSearch="";$("#global-search").value="";reloadList();$("#warehouse-search")?.focus();return;}
   if(action==="retry-list"){reloadList({reset:false});return;}
@@ -1115,6 +1125,21 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("submit", (event) => {
+  if (event.target.matches("#purchasing-filter")) {
+    event.preventDefault();
+    const view = event.target.dataset.viewName;
+    const fields = Object.fromEntries(new FormData(event.target));
+    purchasingLists[view].fields = fields;
+    purchasingLists[view].query = { ...fields };
+    void loadPurchasingList(view);
+    return;
+  }
+  if (event.target.matches("#purchase-supplier-form, #purchase-order-form, #purchase-receipt-form, #purchase-cancel-form")) {
+    event.preventDefault();
+    void savePurchasingForm(event.target);
+    return;
+  }
+  if (event.target.matches("#stock-report-filters")) { event.preventDefault(); applyStockReports(event.target); return; }
   if (event.target.matches("#team-member-form")) { event.preventDefault(); void saveTeamMember(event.target); return; }
   if (event.target.matches("#stock-count-start-form")) { event.preventDefault(); void startCountFromForm(event.target); return; }
   if (event.target.matches("#stock-filter-form")) { event.preventDefault(); applyStockFilters(event.target); return; }
@@ -1147,6 +1172,9 @@ document.addEventListener("change", (event) => {
 });
 
 document.addEventListener("input", (event) => {
+  if (event.target.matches("#purchasing-filter [name], [data-line-field], [data-purchase-search]")) { updatePurchasingInput(event.target); return; }
+  if (event.target.matches("#stock-report-filters [name]")) { updateReportField(event.target); return; }
+  if (event.target.matches("#report-chart-day")) { selectReportDay(Number(event.target.value)); return; }
   if (event.target.matches("[data-count-quantity]")) { trackCountInput(event.target); return; }
   if (event.target.matches("#stock-count-search") || (currentView === "counts" && countScreen.count && event.target.matches("#global-search"))) {
     updateStockCountSearch(event.target.value);
@@ -1156,13 +1184,18 @@ document.addEventListener("input", (event) => {
   if(event.target.matches("#movement-product-search")){scheduleMovementProductSearch(event.target.value);return;}
   if(event.target.matches("#global-search, #product-search, #inventory-search, #movement-search, #warehouse-search")){
     currentSearch=event.target.value;$("#global-search").value=currentSearch;
-    if(currentView === "overview" || currentView === "counts" || currentView === "team"){currentView="products";location.hash="products";$("#sidebar").classList.remove("open");}
+    if(["overview", "counts", "team", "reports", "suppliers", "purchases"].includes(currentView)){currentView="products";location.hash="products";$("#sidebar").classList.remove("open");}
     reloadList({delay:250});
   }
 });
 
 $("#mobile-menu").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
 document.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && event.target?.matches?.("[data-purchase-search]")) {
+    event.preventDefault();
+    void searchPurchasePicker(event.target.dataset.purchaseSearch, event.target.value.trim());
+    return;
+  }
   if (event.key === "Enter" && event.target?.matches?.("[data-count-quantity]")) {
     event.preventDefault();
     const fields = $$("[data-count-quantity]");
@@ -1200,6 +1233,7 @@ document.addEventListener("keydown", (event) => {
   }
 });
 window.addEventListener("hashchange", () => { const view = location.hash.slice(1) || "overview"; if (view !== currentView) { currentSearch = ""; $("#global-search").value = ""; closeModal(); } currentView = view; render(); });
+window.addEventListener("resize", () => { if (currentView === "reports") drawReportTrend(); });
 document.addEventListener("visibilitychange", () => {
   if (document.hidden && movementBarcode.camera) {
     stopBarcodeCamera();

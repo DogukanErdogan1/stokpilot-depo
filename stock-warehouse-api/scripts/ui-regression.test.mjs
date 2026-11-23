@@ -4,6 +4,8 @@ import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 const source=readFileSync(new URL('../public/team.js',import.meta.url),'utf8')+'\n'
   +readFileSync(new URL('../public/stock-counts.js',import.meta.url),'utf8')+'\n'
+  +readFileSync(new URL('../public/reports.js',import.meta.url),'utf8')+'\n'
+  +readFileSync(new URL('../public/purchases.js',import.meta.url),'utf8')+'\n'
   +readFileSync(new URL('../public/app.js',import.meta.url),'utf8').replace('void initializeAuth();','');
 function environment(responder) {
  const elements=new Map(),listeners={},requests=[];
@@ -149,4 +151,54 @@ test("movement history shows the recorded actor and labels older records separat
   assert.match(html, /İŞLEMİ YAPAN/);
   assert.match(html, /Ekip &lt;Üyesi&gt;/);
   assert.match(html, /Kayıt yok/);
+});
+
+test("stock reports share a date and warehouse filter and page each ranking independently", async () => {
+  const summary = { trend: [{ day: "2024-11-01", value: 430 }], openingValue: 400, closingValue: 430, unreconciledRows: 1 };
+  const env = environment((path) => {
+    const url = new URL(path, "http://local");
+    return url.pathname.endsWith("/summary") ? summary : {
+      items: [{ name: "Koli", sku: "K-1", quantity: 5, unit: "adet", movements: 2, warehouseName: "Ana", lastMovement: null, daysIdle: 42 }],
+      pagination: { page: Number(url.searchParams.get("page")), totalPages: 2, total: 12 },
+    };
+  });
+  await env.run(`Object.assign(reportScreen.fields,{ from:"2024-10-31",to:"2024-11-01",warehouseId:"w1",idleDays:"42" });
+    reportScreen.applied = {...reportScreen.fields};
+    Promise.all(reportSectionNames.map(key => loadReportSection(key)))`);
+  assert.equal(env.requests.length, 3);
+  for (const { path } of env.requests) {
+    const params = new URL(path, "http://local").searchParams;
+    assert.equal(params.get("from"), "2024-10-31");
+    assert.equal(params.get("warehouseId"), "w1");
+    assert.equal(params.get("idleDays"), "42");
+  }
+  env.run('currentView = "reports"; $("#report-summary").outerHTML = "existing chart";');
+  await env.run('loadReportSection("outbound",2)');
+  assert.equal(env.requests.length, 4);
+  assert.match(env.requests[3].path, /outbound\?.*page=2/);
+  assert.equal(env.run('$("#report-summary").outerHTML'), "existing chart");
+  assert.match(env.run('$("#report-outbound").outerHTML'), /Sayfa 2 \/ 2/);
+  const html = env.run("renderStockReports()");
+  assert.match(html, /tahmini değer/);
+  assert.match(html, /Günlük değer tablosu/);
+  assert.match(html, /hareket geçmişi mevcut bakiyeyle uyuşmuyor/);
+  assert.match(html, /42 gün/);
+});
+
+test("partial purchases expose remaining quantities and reserve receipt actions for stock writers", () => {
+  const env = environment();
+  env.run(`purchaseDetail = { data: {
+    order: { id:"order1", number:18, status:"PARTIAL", supplierName:"Örnek", warehouseName:"Ana", totalCents:125000 },
+    items: [{ id:"line1", name:"Koli", sku:"K-1", unit:"adet", quantity:100, received:60, unitPriceCents:1250 }],
+    receipts: [{ actorName:"Görevli", createdAt:"2026-11-23T12:00:00Z", items:[{name:"Koli",quantity:60,unit:"adet"}] }],
+    receiptCount: 1
+  }}; currentUser = {role:"operator"};`);
+  const html = env.run("renderPurchases()");
+  assert.match(html, /Kısmi teslim/);
+  assert.match(html, /40 adet/);
+  assert.match(html, /Görevli/);
+  assert.match(html, /data-action="purchase-receive"/);
+  assert.doesNotMatch(html, /data-action="purchase-cancel"/);
+  env.run('currentUser = {role:"viewer"}');
+  assert.doesNotMatch(env.run("renderPurchases()"), /data-action="purchase-receive"/);
 });

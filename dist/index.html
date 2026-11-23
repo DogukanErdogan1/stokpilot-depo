@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#f5f6f2" />
     <meta name="description" content="Ürün ve depo stoklarını tek bir ekrandan takip edin." />
     <title>StokPilot — Stok ve Depo Yönetimi</title>
-    <link rel="stylesheet" href="./styles.css?v=team-1" />
+    <link rel="stylesheet" href="./styles.css?v=purchases-1" />
     <link rel="stylesheet" href="./auth.css?v=20261025-searchable-picker-1" />
   </head>
   <body>
@@ -80,6 +80,9 @@
           <a href="#warehouses" class="nav-link" data-view="warehouses"><svg><use href="#i-warehouse"/></svg><span>Depolar</span></a>
           <a href="#counts" class="nav-link" data-view="counts"><svg><use href="#i-count"/></svg><span>Depo sayımı</span></a>
           <a href="#movements" class="nav-link" data-view="movements"><svg><use href="#i-arrows"/></svg><span>Hareketler</span></a>
+          <a href="#reports" class="nav-link" data-view="reports"><svg><use href="#i-trend"/></svg><span>Raporlar</span></a>
+          <a href="#suppliers" class="nav-link" data-view="suppliers"><svg><use href="#i-team"/></svg><span>Tedarikçiler</span></a>
+          <a href="#purchases" class="nav-link" data-view="purchases"><svg><use href="#i-count"/></svg><span>Satın alma</span></a>
           <a href="#team" class="nav-link" id="team-nav" data-view="team" hidden><svg><use href="#i-team"/></svg><span>Ekip</span></a>
         </nav>
         <div class="sidebar-bottom">
@@ -115,6 +118,8 @@
     <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
     <script src="./team.js?v=team-1" defer></script>
     <script src="./stock-counts.js?v=team-1" defer></script>
-    <script src="./app.js?v=team-1" defer></script>
+    <script src="./reports.js?v=reports-1" defer></script>
+    <script src="./purchases.js?v=purchases-1" defer></script>
+    <script src="./app.js?v=purchases-1" defer></script>
   </body>
 </html>

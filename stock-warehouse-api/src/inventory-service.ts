@@ -35,6 +35,9 @@ function applyStockChange(workspaceId: string, change: StockChange): { movementI
   `).get(workspaceId, change.productId, change.warehouseId) as { quantity: number } | undefined;
 
   const nextQuantity = (current?.quantity ?? 0) + change.quantityDelta;
+  if (!Number.isSafeInteger(change.quantityDelta) || !Number.isSafeInteger(nextQuantity)) {
+    throw new AppError(400, "STOCK_LIMIT", "Stok miktarı desteklenen sınırı aşıyor.");
+  }
   if (nextQuantity < 0) {
     throw new AppError(409, "INSUFFICIENT_STOCK", "İşlem için depoda yeterli stok yok.");
   }
@@ -74,6 +77,7 @@ export function createStockMovement(workspaceId: string, actor: MovementActor, i
   type: "INBOUND" | "OUTBOUND";
   quantity: number;
   note?: string | null;
+  referenceId?: string;
 }) {
   const quantityDelta = input.type === "INBOUND" ? input.quantity : -input.quantity;
   const transaction = db.transaction(() => applyStockChange(workspaceId, {

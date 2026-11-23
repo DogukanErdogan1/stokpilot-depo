@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const source = resolve(projectRoot, "../stock-warehouse-dashboard/dist");
 const destination = resolve(projectRoot, "public");
-const files = ["index.html", "app.js", "barcode-camera.js", "stock-counts.js", "team.js", "styles.css", "auth.css"];
+const files = ["index.html", "app.js", "barcode-camera.js", "stock-counts.js", "team.js", "reports.js", "purchases.js", "styles.css", "auth.css"];
 
 await mkdir(destination, { recursive: true });
 for (const file of files) await copyFile(resolve(source, file), resolve(destination, file));

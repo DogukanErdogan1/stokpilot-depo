@@ -103,6 +103,63 @@ db.exec(`
     PRIMARY KEY (count_id, product_id)
   );
 
+  CREATE TABLE IF NOT EXISTS suppliers (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    contact TEXT,
+    email TEXT,
+    phone TEXT,
+    note TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS purchase_orders (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    order_number INTEGER NOT NULL,
+    request_id TEXT NOT NULL,
+    supplier_id TEXT NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+    warehouse_id TEXT NOT NULL REFERENCES warehouses(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'PARTIAL', 'RECEIVED', 'CANCELLED')),
+    expected_date TEXT,
+    note TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE (workspace_id, order_number),
+    UNIQUE (workspace_id, request_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS purchase_order_items (
+    id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+    product_id TEXT NOT NULL,
+    sku TEXT NOT NULL,
+    name TEXT NOT NULL,
+    unit TEXT NOT NULL,
+    quantity INTEGER NOT NULL CHECK (quantity > 0),
+    received INTEGER NOT NULL DEFAULT 0 CHECK (received >= 0 AND received <= quantity),
+    unit_price_cents INTEGER NOT NULL CHECK (unit_price_cents >= 0),
+    UNIQUE (order_id, product_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS purchase_receipts (
+    id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+    request_id TEXT NOT NULL,
+    actor_name TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE (order_id, request_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS purchase_receipt_items (
+    receipt_id TEXT NOT NULL REFERENCES purchase_receipts(id) ON DELETE CASCADE,
+    item_id TEXT NOT NULL REFERENCES purchase_order_items(id) ON DELETE CASCADE,
+    quantity INTEGER NOT NULL CHECK (quantity > 0),
+    PRIMARY KEY (receipt_id, item_id)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_suppliers_name ON suppliers(workspace_id, name COLLATE NOCASE, id);
+  CREATE INDEX IF NOT EXISTS idx_purchase_order_warehouse ON purchase_orders(workspace_id, warehouse_id, status);
+  CREATE INDEX IF NOT EXISTS idx_purchase_order_product ON purchase_order_items(product_id, order_id);
   CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_counts_open_warehouse
     ON stock_counts(workspace_id, warehouse_id) WHERE status = 'DRAFT';
   CREATE INDEX IF NOT EXISTS idx_stock_counts_workspace_created ON stock_counts(workspace_id, created_at DESC, id);
@@ -176,6 +233,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_warehouses_workspace_name ON warehouses(workspace_id, name COLLATE NOCASE);
   CREATE INDEX IF NOT EXISTS idx_inventory_workspace ON inventory_balances(workspace_id);
   CREATE INDEX IF NOT EXISTS idx_movements_workspace_created ON stock_movements(workspace_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_movements_workspace_warehouse_created ON stock_movements(workspace_id, warehouse_id, created_at);
 `);
 
 db.function("search_text", { deterministic: true }, (value: unknown) => String(value ?? "").normalize("NFKC").toLocaleLowerCase("tr-TR"));
@@ -186,3 +244,20 @@ db.exec(`
 `);
 
 db.exec("CREATE INDEX IF NOT EXISTS idx_warehouses_workspace_archive_name ON warehouses(workspace_id, archived, name COLLATE NOCASE, id)");
+
+const pendingProduct = `SELECT 1 FROM purchase_order_items i JOIN purchase_orders o ON o.id = i.order_id
+  WHERE i.product_id = OLD.id AND o.workspace_id = OLD.workspace_id
+    AND o.status IN ('OPEN', 'PARTIAL') AND i.received < i.quantity`;
+db.exec(`
+  CREATE TRIGGER IF NOT EXISTS protect_pending_purchase_product_archival
+  BEFORE UPDATE OF archived ON products WHEN NEW.archived = 1 AND OLD.archived = 0 AND EXISTS (${pendingProduct})
+  BEGIN SELECT RAISE(ABORT, 'OPEN_PURCHASE_PRODUCT'); END;
+  CREATE TRIGGER IF NOT EXISTS protect_pending_purchase_product_deletion
+  BEFORE DELETE ON products WHEN EXISTS (${pendingProduct})
+  BEGIN SELECT RAISE(ABORT, 'OPEN_PURCHASE_PRODUCT'); END;
+  CREATE TRIGGER IF NOT EXISTS protect_pending_purchase_warehouse_archival
+  BEFORE UPDATE OF archived ON warehouses WHEN NEW.archived = 1 AND OLD.archived = 0 AND EXISTS (
+    SELECT 1 FROM purchase_orders o WHERE o.workspace_id = OLD.workspace_id AND o.warehouse_id = OLD.id AND o.status IN ('OPEN','PARTIAL')
+  )
+  BEGIN SELECT RAISE(ABORT, 'OPEN_PURCHASE_WAREHOUSE'); END;
+`);
