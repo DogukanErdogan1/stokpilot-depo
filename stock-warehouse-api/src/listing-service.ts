@@ -1,9 +1,10 @@
 import { Readable } from "node:stream";
 import type { z } from "zod";
 import { barcodeKey, barcodeKeySql, db } from "./db.js";
-import { stockListQuerySchema, movementListQuerySchema, warehouseListQuerySchema } from "./validation.js";
+import { stockListQuerySchema, stockAlertQuerySchema, movementListQuerySchema, warehouseListQuerySchema } from "./validation.js";
 
 type StockQuery = z.infer<typeof stockListQuerySchema>;
+type StockAlertQuery = z.infer<typeof stockAlertQuerySchema>;
 type MovementQuery = z.infer<typeof movementListQuerySchema>;
 type Row = Record<string, any>;
 type SqlQuery = { prefix: string; from: string; where: string; order: string; values: Array<string | number> };
@@ -52,6 +53,10 @@ function stockSql(workspaceId: string, query: StockQuery, view: "products" | "in
   if (status === "empty") conditions.push(`${quantity} = 0`);
   if (status === "low") conditions.push(`${quantity} <= p.minimum_stock_quantity`);
   if (status === "ok") conditions.push(`${quantity} > p.minimum_stock_quantity`);
+  if (status === "overstock") {
+    conditions.push(`p.minimum_stock_quantity > 0 AND ${quantity} >= p.minimum_stock_quantity * ?`);
+    values.push(query.overstockFactor);
+  }
   for (const [minimum, maximum, expression] of [
     [query.minCost, query.maxCost, "p.cost"], [query.minQuantity, query.maxQuantity, quantity],
     [query.minWarehouses, query.maxWarehouses, "COALESCE(t.warehouseCount, 0)"],
@@ -79,6 +84,45 @@ export function pageRows(sql: SqlQuery, columns: string, page: number, pageSize:
 export function listProducts(workspaceId: string, query: StockQuery) {
   const result = pageRows(stockSql(workspaceId, query, "products"), productColumns, query.page, query.pageSize);
   return { ...result, items: enrichProducts(workspaceId, result.items) };
+}
+export function listStockAlerts(workspaceId: string, query: StockAlertQuery) {
+  const hasWarehouse = Boolean(query.warehouseId);
+  const quantity = hasWarehouse ? "COALESCE(b.quantity, 0)" : "COALESCE(t.totalQuantity, 0)";
+  const values: Array<string | number> = [workspaceId, workspaceId];
+  const conditions = ["p.workspace_id = ?", "p.archived = 0"];
+  let from = "products p LEFT JOIN totals t ON t.product_id = p.id";
+  if (hasWarehouse) {
+    from += ` JOIN warehouses w ON w.workspace_id = p.workspace_id AND w.archived = 0 AND w.id = ?
+      LEFT JOIN inventory_balances b ON b.product_id = p.id AND b.warehouse_id = w.id AND b.workspace_id = p.workspace_id`;
+    values.push(query.warehouseId!);
+  }
+  if (query.category) { conditions.push("p.category = ?"); values.push(query.category); }
+  const empty = `${quantity} = 0`;
+  const critical = `${quantity} > 0 AND ${quantity} <= p.minimum_stock_quantity`;
+  const overstock = `p.minimum_stock_quantity > 0 AND ${quantity} >= p.minimum_stock_quantity * ?`;
+  if (query.type === "empty") conditions.push(empty);
+  else if (query.type === "critical") conditions.push(critical);
+  else if (query.type === "overstock") { conditions.push(overstock); values.push(query.overstockFactor); }
+  else { conditions.push(`(${empty} OR ${critical} OR (${overstock}))`); values.push(query.overstockFactor); }
+  const sql: SqlQuery = {
+    prefix: totalPrefix,
+    from,
+    where: `WHERE ${conditions.join(" AND ")}`,
+    order: `CASE WHEN ${quantity} = 0 THEN 0 WHEN ${quantity} <= p.minimum_stock_quantity THEN 1 ELSE 2 END,
+      ${quantity} ASC, p.name COLLATE NOCASE, p.id`,
+    values,
+  };
+  const columns = `${productColumns}, ${quantity} AS currentQuantity,
+    ${hasWarehouse ? "w.id" : "NULL"} AS warehouseId, ${hasWarehouse ? "w.name" : "NULL"} AS warehouseName`;
+  const result = pageRows(sql, columns, query.page, query.pageSize);
+  const items = enrichProducts(workspaceId, result.items).map(product => {
+    const currentQuantity = Number(product.currentQuantity || 0);
+    const alertType = currentQuantity === 0 ? "empty"
+      : product.minimumStockQuantity > 0 && currentQuantity >= product.minimumStockQuantity * query.overstockFactor ? "overstock"
+      : "critical";
+    return { ...product, alertType };
+  });
+  return { ...result, items };
 }
 export function findProductByBarcode(workspaceId: string, barcode: string) {
   const key = barcodeKey(barcode);
@@ -157,7 +201,8 @@ export function overview(workspaceId: string) {
       COALESCE(SUM(COALESCE(t.totalQuantity, 0)), 0) AS totalQuantity,
       COALESCE(SUM(COALESCE(t.totalQuantity, 0) * p.cost), 0) AS stockValue,
       COALESCE(SUM(CASE WHEN COALESCE(t.totalQuantity, 0) <= p.minimum_stock_quantity THEN 1 ELSE 0 END), 0) AS criticalCount,
-      COALESCE(SUM(CASE WHEN COALESCE(t.totalQuantity, 0) = 0 THEN 1 ELSE 0 END), 0) AS emptyCount
+      COALESCE(SUM(CASE WHEN COALESCE(t.totalQuantity, 0) = 0 THEN 1 ELSE 0 END), 0) AS emptyCount,
+      COALESCE(SUM(CASE WHEN p.minimum_stock_quantity > 0 AND COALESCE(t.totalQuantity, 0) >= p.minimum_stock_quantity * 3 THEN 1 ELSE 0 END), 0) AS overstockCount
       FROM products p LEFT JOIN totals t ON t.product_id = p.id WHERE p.workspace_id = ? AND p.archived = 0`)
       .get(workspaceId, workspaceId) as Row;
     metrics.archivedProductCount = (db.prepare("SELECT COUNT(*) AS total FROM products WHERE workspace_id = ? AND archived = 1").get(workspaceId) as Row).total;
@@ -170,7 +215,7 @@ export function overview(workspaceId: string) {
       WHERE w.workspace_id = ? GROUP BY w.id ORDER BY w.name COLLATE NOCASE, w.id`).all(metrics.productCount, workspaceId) as Row[];
     const alerts = listProducts(workspaceId, stockListQuerySchema.parse({ status: "low", sort: "quantity-asc", pageSize: 8 })).items;
     const recentMovements = listMovements(workspaceId, movementListQuerySchema.parse({ pageSize: 5 })).items;
-    const categories = (db.prepare("SELECT DISTINCT category FROM products WHERE workspace_id = ? ORDER BY category COLLATE NOCASE").all(workspaceId) as Row[]).map(r => r.category);
+    const categories = (db.prepare("SELECT DISTINCT category FROM products WHERE workspace_id = ? AND archived = 0 ORDER BY category COLLATE NOCASE").all(workspaceId) as Row[]).map(r => r.category);
     return { metrics, warehouses, alerts, recentMovements, categories };
   })();
 }

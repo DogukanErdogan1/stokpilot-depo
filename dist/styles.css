@@ -504,3 +504,24 @@ html.modal-open{overflow:hidden;overscroll-behavior:none;scrollbar-gutter:stable
   .product-import-picker input[type="file"], .product-import-picker > .button { min-height: 44px; }
   .product-import-modal .count-pager { padding: 10px 0; }
 }
+
+.notification-popover { max-height: min(82vh, 720px); overflow-y: auto; overscroll-behavior: contain; }
+.notification-filters { padding: 12px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; border-bottom: 1px solid var(--line); background: #fbfcfa; }
+.notification-filters label { min-width: 0; display: grid; gap: 5px; color: #5e6c63; font-size: 11px; font-weight: 600; }
+.notification-filters select { width: 100%; min-width: 0; height: 36px; padding: 0 8px; border: 1px solid #e3e8e2; border-radius: 7px; background: #fff; color: #34443b; font-size: 12px; }
+.notification-filters select:focus-visible, .notification-pagination button:focus-visible { outline: 3px solid rgba(23,118,90,.2); outline-offset: 1px; }
+.notification-symbol.overstock, .notification-severity.overstock { background: #edf2ff; color: #415e9a; }
+.notification-item-copy small { font-size: 10px; line-height: 1.45; }
+.notification-severity { font-size: 9px; }
+.notification-state { min-height: 82px; padding: 20px 14px; display: flex; align-items: center; justify-content: center; gap: 8px; color: #65746a; font-size: 12px; text-align: center; }
+.notification-error { flex-direction: column; color: #a3342b; }
+.notification-pagination { padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid #eef1ed; color: #738078; font-size: 11px; }
+.notification-pagination > div { display: flex; align-items: center; gap: 8px; }
+.notification-pagination button { width: 30px; height: 30px; border: 1px solid #e4e9e3; border-radius: 7px; background: #fff; color: #34443b; font-size: 18px; line-height: 1; }
+.notification-pagination button:disabled { opacity: .45; cursor: default; }
+.notification-popover .popover-footer { position: sticky; bottom: 0; background: #fff; }
+@media (max-width: 560px) {
+  .notification-anchor .topbar-popover { width: min(360px, calc(100vw - 20px)); right: -38px; }
+  .notification-filters { padding: 10px; gap: 8px; }
+  .notification-filters select { height: 40px; }
+}

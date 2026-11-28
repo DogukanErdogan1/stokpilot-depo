@@ -11,6 +11,8 @@ const movementBarcode = { lookup: null, camera: null };
 let showArchivedProducts = false;
 let showArchivedWarehouses = false;
 const warehouseFilters = {location:null, sort:"name"};
+const notificationFilters = { type: "all", warehouse: "all", category: "all", overstockFactor: "3" };
+const notificationPage = { page: 1, pageSize: 6, total: 0, totalPages: 1, items: [], loading: false, error: "", request: 0 };
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -29,7 +31,7 @@ const activeProducts = () => state.products.filter((product) => !product.archive
 const activeWarehouses = () => state.warehouses.filter((warehouse) => !warehouse.archived);
 const getUserInitials = (user) => (user.fullName || user.email || "StokPilot").split(/[\s@._-]+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toLocaleUpperCase("tr-TR") || "SP";
 
-const defaultStockFilters = () => ({ status: "all", warehouse: "all", category: "all", minCost: "", maxCost: "", minQuantity: "", maxQuantity: "", minWarehouses: "", maxWarehouses: "", scope: "warehouse", sort: "name", productId: "" });
+const defaultStockFilters = () => ({ status: "all", warehouse: "all", category: "all", overstockFactor: "3", minCost: "", maxCost: "", minQuantity: "", maxQuantity: "", minWarehouses: "", maxWarehouses: "", scope: "warehouse", sort: "name", productId: "" });
 const stockFilters = { products: defaultStockFilters(), inventory: defaultStockFilters() };
 let modalContext = null;
 const stockedWarehouseCount = (product) => activeWarehouses().filter((warehouse) => Number(product.stock?.[warehouse.id] || 0) > 0).length;
@@ -51,7 +53,7 @@ function pageSearchControl(id, placeholder) {
 
 function filterControls(view, resultCount, totalCount) {
   const filters = stockFilters[view];
-  const statuses = [["all", "Tümü"], ["low", "Kritik stok"], ["empty", "Tükenenler"], ["ok", "Stokta"]];
+  const statuses = [["all", "Tümü"], ["low", "Kritik stok"], ["empty", "Tükenenler"], ["overstock", "Fazla stok"], ["ok", "Stokta"]];
   const advancedKeys = ["category", "minCost", "maxCost", "minQuantity", "maxQuantity", "minWarehouses", "maxWarehouses"];
   const activeCount = Object.keys(filters).filter((key) => filters[key] !== defaultStockFilters()[key]).length + Number(Boolean(currentSearch.trim()));
   const categories = state.summary?.categories || [];
@@ -61,7 +63,7 @@ function filterControls(view, resultCount, totalCount) {
     <div class="filter-status-row"><div class="filter-tabs" role="group" aria-label="Stok durumuna göre filtrele">${statuses.map(([value, label]) => `<button type="button" class="filter-tab ${filters.status === value ? "active" : ""}" aria-pressed="${filters.status === value}" data-action="filter-stock-status" data-status="${value}">${label}</button>`).join("")}</div><span class="table-count">${number(resultCount)} / ${number(totalCount)} ${view === "products" ? "ürün" : "stok satırı"}</span>${activeCount ? `<button class="subtle-link" type="button" data-action="clear-stock-filters">Filtreleri temizle (${activeCount})</button>` : ""}</div>
     ${view === "inventory" && filters.scope === "total" ? `<p class="filter-note">Durum ve miktar ürünün tüm depolardaki toplamına göre filtreleniyor.</p>` : ""}
     ${filters.productId ? `<div class="filter-context">Seçili ürün: <strong>${esc(productById(filters.productId)?.name || "Ürün")}</strong><button type="button" data-action="clear-stock-product" aria-label="Ürün seçimini kaldır">×</button></div>` : ""}
-    <details class="advanced-filters" ${advancedKeys.some((key) => filters[key] !== defaultStockFilters()[key]) ? "open" : ""}><summary>Gelişmiş filtreler <span>Birim maliyet, miktar, depo sayısı ve kategori</span></summary><form id="stock-filter-form"><div class="advanced-filter-grid">${range("Birim maliyet (₺)", "Cost", "0.01")}${range(view === "inventory" && filters.scope === "warehouse" ? "Depodaki miktar" : "Stok miktarı", "Quantity")}${range("Stok bulunan depo sayısı", "Warehouses")}<label class="filter-field">Kategori<select name="category"><option value="all">Tüm kategoriler</option>${categories.map((category) => `<option value="${esc(category)}" ${filters.category === category ? "selected" : ""}>${esc(category)}</option>`).join("")}</select></label>${view === "inventory" ? `<label class="filter-field">Stok değerlendirmesi<select name="scope"><option value="warehouse" ${filters.scope === "warehouse" ? "selected" : ""}>Her depoyu ayrı değerlendir</option><option value="total" ${filters.scope === "total" ? "selected" : ""}>Ürünün toplam stokunu değerlendir</option></select></label>` : ""}</div><p class="filter-note">Sınırlar dahildir. Depo sayısı yalnızca stoku sıfırdan büyük aktif depoları sayar.${view === "inventory" && filters.scope === "total" ? " Durum ve miktar filtreleri ürün toplamına uygulanır; satırlar depo bakiyelerini gösterir." : ""}</p><div class="filter-form-footer"><span class="filter-error" role="alert" id="stock-filter-error"></span><button class="button button-primary" type="submit">Filtreleri uygula</button></div></form></details>
+    <details class="advanced-filters" ${filters.status === "overstock" || advancedKeys.some((key) => filters[key] !== defaultStockFilters()[key]) ? "open" : ""}><summary>Gelişmiş filtreler <span>Birim maliyet, miktar, depo sayısı ve kategori</span></summary><form id="stock-filter-form"><div class="advanced-filter-grid">${range("Birim maliyet (₺)", "Cost", "0.01")}${range(view === "inventory" && filters.scope === "warehouse" ? "Depodaki miktar" : "Stok miktarı", "Quantity")}${range("Stok bulunan depo sayısı", "Warehouses")}<label class="filter-field">Kategori<select name="category"><option value="all">Tüm kategoriler</option>${categories.map((category) => `<option value="${esc(category)}" ${filters.category === category ? "selected" : ""}>${esc(category)}</option>`).join("")}</select></label>${filters.status === "overstock" ? `<label class="filter-field">Fazla stok eşiği<select name="overstockFactor">${[[2,"Minimumun 2 katı"],[3,"Minimumun 3 katı"],[5,"Minimumun 5 katı"]].map(([value,label])=>`<option value="${value}" ${String(value)===filters.overstockFactor?"selected":""}>${label}</option>`).join("")}</select></label>` : ""}${view === "inventory" ? `<label class="filter-field">Stok değerlendirmesi<select name="scope"><option value="warehouse" ${filters.scope === "warehouse" ? "selected" : ""}>Her depoyu ayrı değerlendir</option><option value="total" ${filters.scope === "total" ? "selected" : ""}>Ürünün toplam stokunu değerlendir</option></select></label>` : ""}</div><p class="filter-note">Sınırlar dahildir. Depo sayısı yalnızca stoku sıfırdan büyük aktif depoları sayar.${filters.status === "overstock" ? ` Minimum stoğu sıfırdan büyük ürünlerde, eldeki miktar minimumun ${esc(filters.overstockFactor)} katına ulaştığında fazla stok sayılır.` : ""}${view === "inventory" && filters.scope === "total" ? " Durum ve miktar filtreleri ürün toplamına uygulanır; satırlar depo bakiyelerini gösterir." : ""}</p><div class="filter-form-footer"><span class="filter-error" role="alert" id="stock-filter-error"></span><button class="button button-primary" type="submit">Filtreleri uygula</button></div></form></details>
   </section>`;
 }
 
@@ -81,9 +83,12 @@ function applyStockFilters(form) {
   reloadList();
 }
 
-function openStockAlerts(productId = "") {
+function openStockAlerts(productId = "", alertType = notificationFilters.type, warehouseId = notificationFilters.warehouse, category = notificationFilters.category) {
   resetStockFilters("inventory");
-  stockFilters.inventory = { ...defaultStockFilters(), status: "low", scope: "total", productId };
+  const status = alertType === "empty" ? "empty" : alertType === "overstock" ? "overstock" : alertType === "all" ? "all" : "low";
+  stockFilters.inventory = { ...defaultStockFilters(), status, warehouse: warehouseId || "all", category: category || "all",
+    overstockFactor: notificationFilters.overstockFactor, scope: warehouseId && warehouseId !== "all" ? "warehouse" : "total",
+    minQuantity: alertType === "critical" && !productId ? "1" : "", productId };
   invalidateList("inventory",true);
   setView("inventory");
 }
@@ -121,8 +126,38 @@ function closeModal() {
   if (context.trigger?.isConnected) context.trigger.focus({ preventScroll: true });
 }
 
-function stockNotifications() {
-  return (state.alerts || []).map(product => ({product, quantity: sumStock(product)}));
+function notificationParams() {
+  const params = new URLSearchParams({ page: String(notificationPage.page), pageSize: String(notificationPage.pageSize), type: notificationFilters.type, overstockFactor: notificationFilters.overstockFactor });
+  if (notificationFilters.warehouse !== "all") params.set("warehouseId", notificationFilters.warehouse);
+  if (notificationFilters.category !== "all") params.set("category", notificationFilters.category);
+  return params;
+}
+
+async function loadNotificationPage(page = notificationPage.page) {
+  notificationPage.page = page;
+  const request = ++notificationPage.request;
+  notificationPage.loading = true;
+  notificationPage.error = "";
+  if (!$("#notification-popover").hidden) renderNotificationPopover();
+  try {
+    const result = await api(`/stock-alerts?${notificationParams()}`);
+    if (request !== notificationPage.request) return;
+    notificationPage.items = result.items.map(item => ({ ...normalizeProduct(item), currentQuantity: item.currentQuantity, alertType: item.alertType, warehouseId: item.warehouseId, warehouseName: item.warehouseName }));
+    notificationPage.page = result.pagination.page;
+    notificationPage.total = result.pagination.total;
+    notificationPage.totalPages = result.pagination.totalPages;
+  } catch (problem) {
+    if (request !== notificationPage.request) return;
+    notificationPage.items = [];
+    notificationPage.total = 0;
+    notificationPage.totalPages = 1;
+    notificationPage.error = problem.message || "Bildirimler yüklenemedi.";
+  } finally {
+    if (request === notificationPage.request) {
+      notificationPage.loading = false;
+      if (!$("#notification-popover").hidden) renderNotificationPopover();
+    }
+  }
 }
 
 function closeTopbarPopovers() {
@@ -135,22 +170,37 @@ function closeTopbarPopovers() {
 }
 
 function renderNotificationPopover() {
-  const alerts = stockNotifications();
-  const total = metric("criticalCount");
-  const visibleAlerts = alerts.slice(0, 6);
+  const { items, total, page, pageSize, totalPages, loading, error } = notificationPage;
+  const start = total ? (page - 1) * pageSize + 1 : 0;
+  const end = Math.min(page * pageSize, total);
+  const categoryOptions = state.summary?.categories || [];
+  const typeOptions = [["all", "Tüm uyarılar"], ["empty", "Tükenenler"], ["critical", "Kritik seviye"], ["overstock", "Fazla stok"]];
+  const typeNames = { empty: "Tükendi", critical: "Kritik", overstock: "Fazla stok" };
   $("#notification-popover").innerHTML = `
-    <header class="popover-heading"><div><strong>Stok bildirimleri</strong><p>Minimum seviyeye ulaşan ürünler</p></div><span class="notification-total">${number(total)}</span></header>
-    ${visibleAlerts.length ? `<div class="notification-list">${visibleAlerts.map(({ product, quantity }) => {
-      const empty = quantity === 0;
-      const message = empty ? "Stok tükendi" : `${number(quantity)} ${esc(product.unit)} kaldı · minimum ${number(product.minimum)}`;
-      return `<div class="notification-row"><button class="notification-item" type="button" data-action="open-stock-alert" data-product-id="${esc(product.id)}" aria-label="${esc(product.name)} stok uyarısı, ${esc(message)}">
-        <span class="notification-symbol ${empty ? "empty" : "low"}" aria-hidden="true">${empty ? "!" : "↓"}</span>
-        <span class="notification-item-copy"><strong>${esc(product.name)}</strong><small>${esc(product.sku)} · ${message} ${empty ? "" : esc(product.unit)}</small></span>
-        <span class="notification-severity ${empty ? "empty" : "low"}">${empty ? "Tükendi" : "Kritik"}</span>
+    <header class="popover-heading"><div><strong>Stok bildirimleri</strong><p>Stok türü, depo ve kategoriye göre filtrele</p></div><span class="notification-total">${loading ? "…" : number(total)}</span></header>
+    <div class="notification-filters" aria-label="Bildirim filtreleri">
+      <label>Stok durumu<select class="notification-filter" data-notification-filter="type">${typeOptions.map(([value,label])=>`<option value="${value}" ${notificationFilters.type===value?"selected":""}>${label}</option>`).join("")}</select></label>
+      <label>Depo<select class="notification-filter" data-notification-filter="warehouse"><option value="all">Tüm depolar</option>${activeWarehouses().map(warehouse=>`<option value="${esc(warehouse.id)}" ${notificationFilters.warehouse===warehouse.id?"selected":""}>${esc(warehouse.name)}</option>`).join("")}</select></label>
+      <label>Kategori<select class="notification-filter" data-notification-filter="category"><option value="all">Tüm kategoriler</option>${categoryOptions.map(category=>`<option value="${esc(category)}" ${notificationFilters.category===category?"selected":""}>${esc(category)}</option>`).join("")}</select></label>
+      ${["all","overstock"].includes(notificationFilters.type)?`<label>Fazla stok eşiği<select class="notification-filter" data-notification-filter="overstockFactor">${[[2,"Minimumun 2 katı"],[3,"Minimumun 3 katı"],[5,"Minimumun 5 katı"]].map(([value,label])=>`<option value="${value}" ${String(value)===notificationFilters.overstockFactor?"selected":""}>${label}</option>`).join("")}</select></label>`:""}
+    </div>
+    ${loading ? `<div class="notification-state" role="status">Bildirimler yükleniyor…</div>` : error ? `<div class="notification-state notification-error" role="alert"><span>${esc(error)}</span><button type="button" class="button button-small" data-action="retry-stock-alerts">Tekrar dene</button></div>` : items.length ? `<div class="notification-list">${items.map(product => {
+      const empty = product.alertType === "empty";
+      const overstock = product.alertType === "overstock";
+      const quantity = Number(product.currentQuantity || 0);
+      const message = empty ? (product.warehouseName ? "Bu depoda stok yok" : "Stok tükendi")
+        : overstock ? `${number(quantity)} ${esc(product.unit)} · minimumun ${esc(notificationFilters.overstockFactor)} katı veya üstü`
+        : `${number(quantity)} ${esc(product.unit)} kaldı · minimum ${number(product.minimum)}`;
+      const place = product.warehouseName || "Tüm depolar";
+      return `<div class="notification-row"><button class="notification-item" type="button" data-action="open-stock-alert" data-product-id="${esc(product.id)}" data-alert-type="${product.alertType}" data-warehouse-id="${esc(product.warehouseId || notificationFilters.warehouse)}" data-category="${esc(notificationFilters.category)}" aria-label="${esc(product.name)} stok uyarısı, ${esc(message)}">
+        <span class="notification-symbol ${empty ? "empty" : overstock ? "overstock" : "low"}" aria-hidden="true">${empty ? "!" : overstock ? "↑" : "↓"}</span>
+        <span class="notification-item-copy"><strong>${esc(product.name)}</strong><small>${esc(product.sku)} · ${esc(product.category)} · ${esc(place)}<br>${message}</small></span>
+        <span class="notification-severity ${empty ? "empty" : overstock ? "overstock" : "low"}">${typeNames[product.alertType]}</span>
       </button>${canEditCatalog() ? `<button class="button button-small notification-purchase" type="button" title="Sipariş oluştur"
         aria-label="${esc(product.name)} için sipariş oluştur" data-action="purchase-from-alert" data-id="${esc(product.id)}">${icon("plus")} Sipariş</button>` : ""}</div>`;
-    }).join("")}</div>${total > visibleAlerts.length ? `<p class="notification-overflow">+ ${number(total - visibleAlerts.length)} başka stok uyarısı</p>` : ""}` : `<div class="notification-empty"><span aria-hidden="true">✓</span><strong>Şimdilik her şey yolunda</strong><p>Minimum seviyenin altındaki ürün bulunmuyor.</p></div>`}
-    <footer class="popover-footer"><button type="button" data-action="show-stock-alerts">Stok durumunu görüntüle <span aria-hidden="true">→</span></button></footer>`;
+    }).join("")}</div>` : `<div class="notification-empty"><span aria-hidden="true">✓</span><strong>Bu filtrelerle uyarı yok</strong><p>Başka bir depo, kategori veya stok durumu seçebilirsin.</p></div>`}
+    ${!loading && !error && total ? `<div class="notification-pagination"><span>${number(start)}–${number(end)} / ${number(total)}</span><div><button type="button" data-action="stock-alert-page" data-page="${page-1}" aria-label="Önceki bildirimler" ${page<=1?"disabled":""}>‹</button><span>Sayfa ${number(page)} / ${number(totalPages)}</span><button type="button" data-action="stock-alert-page" data-page="${page+1}" aria-label="Sonraki bildirimler" ${page>=totalPages?"disabled":""}>›</button></div></div>` : ""}
+    <footer class="popover-footer"><button type="button" data-action="show-stock-alerts">Filtrelenmiş stok listesini aç <span aria-hidden="true">→</span></button></footer>`;
 }
 
 function renderProfilePopover() {
@@ -177,16 +227,17 @@ function toggleTopbarPopover(name) {
   else renderProfilePopover();
   panel.hidden = false;
   button.setAttribute("aria-expanded", "true");
+  if (name === "notifications") void loadNotificationPage(1);
 }
 
 function updateNotificationIndicator() {
-  const count = metric("criticalCount");
+  const count = metric("criticalCount") + metric("overstockCount");
   const button = $("#notification-button");
   const badge = $("#notification-count");
   badge.hidden = count === 0;
   badge.textContent = count > 9 ? "9+" : String(count);
   button.setAttribute("aria-label", count ? `Bildirimler, ${count} stok uyarısı` : "Bildirimler, uyarı yok");
-  button.title = count ? `${count} kritik stok uyarısı` : "Kritik stok uyarısı yok";
+  button.title = count ? `${count} stok uyarısı` : "Stok uyarısı yok";
 }
 
 async function api(path, options = {}) {
@@ -317,6 +368,7 @@ async function refreshState() {
   const summary = await api("/overview");
   state = { ...state, products: [], summary, warehouses: summary.warehouses.map(w => ({ ...w, archived: Boolean(w.archived) })),
     alerts: summary.alerts.map(normalizeProduct), movements: summary.recentMovements.map(normalizeMovement) };
+  if (!$("#notification-popover").hidden) void loadNotificationPage(notificationPage.page);
   for (const view of Object.keys(listPages)) invalidateList(view);
   invalidateStockReports();
   if (listPages[currentView]) await loadListPage(currentView);
@@ -1054,7 +1106,7 @@ function showHelp() {
         <article class="help-step"><span class="help-step-number">02</span><div><h3>Depo konumlarını tanımla</h3><p>Her fiziksel lokasyon için benzersiz bir depo kodu ve anlaşılır bir ad kullan. Böylece aynı ürünün hangi depoda bulunduğunu ayrı ayrı takip edebilirsin.</p><button class="button button-small" type="button" data-view="warehouses">Depolara git <span aria-hidden="true">→</span></button></div></article>
         <article class="help-step"><span class="help-step-number">03</span><div><h3>Stok işlemlerini kaydet</h3><p>Stok girişinde miktar artar, çıkışta azalır. Sayım düzeltmesinde gerçek sayım miktarını gir; sistem farkı hesaplar. Transferde kaynak ve hedef depoyu seç. Yetersiz stokla çıkış yapılamaz.</p><button class="button button-small" type="button" data-view="movements">Hareket geçmişini gör <span aria-hidden="true">→</span></button></div></article>
         <article class="help-step"><span class="help-step-number">04</span><div><h3>Stok seviyelerini izle</h3><p>Genel bakış toplam ürün çeşidini, stok miktarını ve yaklaşık stok değerini özetler. Stok Durumu ekranında ürünleri ve depoları filtreleyebilir; miktarı minimum seviyede olanları görebilirsin.</p><button class="button button-small" type="button" data-view="inventory">Stok durumuna git <span aria-hidden="true">→</span></button></div></article>
-        <article class="help-step"><span class="help-step-number">05</span><div><h3>Bildirimleri takip et</h3><p>Ürün toplamı minimum stok seviyesine indiğinde veya sıfırlandığında zil simgesinde uyarı görünür. Zile tıklayarak uyarı listesini aç; bir uyarı seni stok ekranına götürür.</p></div></article>
+        <article class="help-step"><span class="help-step-number">05</span><div><h3>Bildirimleri takip et</h3><p>Zil simgesinde tükenen, kritik seviyedeki ve fazla stoklu ürünleri izle. Bildirimleri depoya veya kategoriye göre daralt; fazla stok eşiğini minimum seviyenin 2, 3 veya 5 katı olarak seç. Bir kayda tıklayarak filtrelenmiş stok ekranına geç.</p></div></article>
         <article class="help-step"><span class="help-step-number">06</span><div><h3>Raporla ve hesabını yönet</h3><p>Genel bakıştaki Dışa aktar düğmesi envanteri CSV olarak indirir. Profil dairesi oturum açan kişinin baş harflerini gösterir; menüden e-posta bilgini görebilir ve güvenli şekilde çıkış yapabilirsin.</p></div></article>
       </div>
       <div class="help-tip"><strong>İpucu</strong><span>Ürün veya depo geçmişi varsa silmek yerine arşivle. Kayıtlar korunur, arşivlenenler yeni stok işlemlerinde seçilemez.</span></div>
@@ -1100,8 +1152,10 @@ document.addEventListener("click", (event) => {
   if (action === "toggle-barcode-panel") { setBarcodePanel($("#movement-barcode-panel").hidden, true); return; }
   if (action === "find-barcode") { void findMovementBarcode(); return; }
   if (action === "toggle-barcode-camera") { void toggleBarcodeCamera(); return; }
-  if (action === "open-stock-alert") { openStockAlerts(actionElement.dataset.productId); return; }
-  if (action === "show-stock-alerts") { openStockAlerts(); return; }
+  if (action === "open-stock-alert") { openStockAlerts(actionElement.dataset.productId, actionElement.dataset.alertType, actionElement.dataset.warehouseId, actionElement.dataset.category); return; }
+  if (action === "show-stock-alerts") { openStockAlerts("", notificationFilters.type, notificationFilters.warehouse, notificationFilters.category); return; }
+  if (action === "stock-alert-page") { const target = Number(actionElement.dataset.page); if (!notificationPage.loading && target >= 1 && target <= notificationPage.totalPages) void loadNotificationPage(target); return; }
+  if (action === "retry-stock-alerts") { void loadNotificationPage(notificationPage.page); return; }
   if (action === "filter-stock-status") { stockFilters[currentView].status = actionElement.dataset.status; reloadList(); return; }
   if (action === "clear-stock-filters") { resetStockFilters(); reloadList(); return; }
   if (action === "clear-stock-product") { stockFilters[currentView].productId = ""; reloadList(); return; }
@@ -1167,6 +1221,11 @@ document.addEventListener("submit", (event) => {
 });
 
 document.addEventListener("change", (event) => {
+  if (event.target.matches("[data-notification-filter]")) {
+    notificationFilters[event.target.dataset.notificationFilter] = event.target.value;
+    void loadNotificationPage(1);
+    return;
+  }
   if (event.target.matches("#product-import-file")) {
     const [file] = event.target.files;
     event.target.value = "";

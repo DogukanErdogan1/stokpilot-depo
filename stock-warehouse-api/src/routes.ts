@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { getRequestUser } from "./auth.js";
 import { db } from "./db.js";
-import { enrichProducts, exportRows, findProductByBarcode, listInventory, listMovements, listProducts, listWarehouses, overview } from "./listing-service.js";
+import { enrichProducts, exportRows, findProductByBarcode, listInventory, listMovements, listProducts, listStockAlerts, listWarehouses, overview } from "./listing-service.js";
 import { AppError } from "./errors.js";
 import { adjustInventory, createStockMovement, transferStock } from "./inventory-service.js";
 import { finishStockCount, listStockCountItems, listStockCounts, saveStockCountItems, startStockCount } from "./stock-count-service.js";
@@ -21,6 +21,7 @@ import {
   warehouseListQuerySchema,
   idParamsSchema,
   inventoryQuerySchema,
+  stockAlertQuerySchema,
   movementListQuerySchema,
   productListQuerySchema,
   saveCountItemsSchema,
@@ -53,6 +54,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       .send(exportRows(getWorkspaceId(request), view, filters));
   });
   app.get("/api/products", async request => listProducts(getWorkspaceId(request), parse(productListQuerySchema, request.query)));
+  app.get("/api/stock-alerts", async request => listStockAlerts(getWorkspaceId(request), parse(stockAlertQuerySchema, request.query)));
 
   app.get("/api/products/by-barcode", async request => {
     const { code } = parse(barcodeQuerySchema, request.query);

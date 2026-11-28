@@ -127,7 +127,8 @@ export const stockListQuerySchema = z.object({
   archived: z.enum(["true", "false"]).default("false").transform(v => v === "true"),
   lowStockOnly: z.enum(["true", "false"]).default("false").transform(v => v === "true"),
   category: z.string().trim().max(80).optional(),
-  status: z.enum(["all", "low", "empty", "ok"]).default("all"),
+  status: z.enum(["all", "low", "empty", "ok", "overstock"]).default("all"),
+  overstockFactor: z.coerce.number().int().min(2).max(5).default(3),
   sort: z.enum(["name", "quantity-desc", "quantity-asc", "cost-desc", "cost-asc", "warehouses-desc"]).default("name"),
   scope: z.enum(["warehouse", "total"]).default("warehouse"),
   minCost: optionalNumber, maxCost: optionalNumber,
@@ -141,6 +142,14 @@ export const stockListQuerySchema = z.object({
   }
 });
 export const productListQuerySchema = stockListQuerySchema;
+export const stockAlertQuerySchema = z.object({
+  page: paginationShape.page,
+  pageSize: z.coerce.number().int().min(1).max(6).default(6),
+  type: z.enum(["all", "empty", "critical", "overstock"]).default("all"),
+  warehouseId: z.string().uuid().optional(),
+  category: z.string().trim().max(80).optional(),
+  overstockFactor: z.coerce.number().int().min(2).max(5).default(3),
+});
 
 export const warehouseListQuerySchema = z.object({
   ...paginationShape,
